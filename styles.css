@@ -1,0 +1,53 @@
+/* Zendesk Auto Translator - Styles */
+
+.zt-translate-badge {
+    display: inline-block;
+    background: #1f73b7;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 5px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.zt-translate-btn {
+    display: inline-block;
+    background: #1f73b7;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    margin: 8px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: background 0.2s;
+}
+
+.zt-translate-btn:hover {
+    background: #1557a0;
+}
+
+.zt-translate-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.zt-translation-result {
+    background: #f0f8ff;
+    border-left: 3px solid #1f73b7;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.zt-translation-label {
+    font-size: 11px;
+    color: #666;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
