@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.9 (current)
+### v1.0.10 (current)
+- Fix paragraph spacing in the HTML→markdown→HTML roundtrip. v1.0.9 emitted a single `\n` per `<p>`, so separate paragraphs collapsed into one paragraph with soft `<br>` breaks. Now emits `\n\n`, so a reply like `Hi\n\nBody\n\nRegards` round-trips to three distinct paragraphs and keeps the blank-line spacing agents use between greeting / body / signature.
+
+### v1.0.9
 - **Formatting preserved through translation.** The reply is extracted from CKEditor as HTML, converted to a lightweight markdown representation, translated, rehydrated to HTML, and injected via the clipboard pipeline. Bold/italic/underline, lists, links, and line breaks survive the round trip.
 - **Injection simplified from 4 strategies to 2.** Based on the research memo in `docs/` (TL;DR: `synthetic-paste` is using CKEditor 5's documented clipboard pipeline, not a hack). Kept `ckeditor-api` (now fixed to search the composer subtree for `.ck-editor__editable*` and use `editor.setData(html)` when the instance is exposed) and `synthetic-paste`. Removed `beforeinput` (synthetic `InputEvent` is untrusted, editors ignore it) and `clipboard-execpaste` (deprecated, clobbers user clipboard).
 - **Spellcheck suppressed during injection.** `spellcheck="false"` is set on the composer for the duration of the replacement and restored on the next frame, avoiding the brief red-squiggle flash while the OS spellchecker re-runs over new text.

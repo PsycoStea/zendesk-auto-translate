@@ -406,7 +406,10 @@
                     break;
                 case 'p':
                 case 'div':
-                    out += (out && !out.endsWith('\n') ? '\n' : '') + inner + '\n';
+                    // Paragraphs end with a blank line so the markdown
+                    // roundtrip rehydrates separate <p> tags rather than
+                    // collapsing them into a single paragraph with <br>.
+                    out += inner + '\n\n';
                     break;
                 case 'strong':
                 case 'b':
@@ -421,7 +424,7 @@
                     break;
                 case 'ul':
                 case 'ol':
-                    out += (out && !out.endsWith('\n') ? '\n' : '') + inner;
+                    out += inner + '\n';
                     break;
                 case 'li':
                     out += `- ${inner}\n`;
