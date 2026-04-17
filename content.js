@@ -296,22 +296,33 @@
     async function processCustomerMessage(messageElement) {
         if (messageElement.dataset.ztProcessed) return;
         messageElement.dataset.ztProcessed = 'true';
-        
+
         const messageBody = messageElement.querySelector('.zd-comment');
         if (!messageBody) return;
-        
+
         const textContent = (messageBody.innerText || messageBody.textContent).trim();
         if (!textContent || textContent.length < 10) return;
-        
-        const langCode = await detectLanguage(textContent);
-        if (langCode === 'en') return;
-        
-        detectedCustomerLanguage = langCode;
 
-        // Try to add the reply button now that we know the language, and
-        // update its content if it already exists.
-        addReplyTranslateButton();
-        updateReplyButton();
+        // Cache the detected language on the element itself so ticket
+        // switches (which clear data-zt-processed to force UI re-render)
+        // don't burn a fresh API call for every previously-seen message.
+        let langCode = messageElement.dataset.ztLang;
+        if (!langCode) {
+            langCode = await detectLanguage(textContent);
+            messageElement.dataset.ztLang = langCode;
+        }
+        if (langCode === 'en') return;
+
+        // Only update the extension-wide detected language from messages the
+        // agent is actually looking at. Zendesk keeps other open tickets in
+        // the same DOM, and their customer messages would otherwise
+        // overwrite detectedCustomerLanguage in a race and leak their
+        // language into the visible ticket's reply button.
+        if (isElementVisible(messageElement)) {
+            detectedCustomerLanguage = langCode;
+            addReplyTranslateButton();
+            updateReplyButton();
+        }
         
         const translationContainer = document.createElement('div');
         translationContainer.style.marginTop = '8px';
