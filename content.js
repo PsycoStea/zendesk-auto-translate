@@ -7,91 +7,196 @@
     // ============================================
     // STORAGE & STATE MANAGEMENT
     // ============================================
-    
+
     let detectedCustomerLanguage = null;
     let translationMemory = {};
     let isEnabled = true;
-    
-    // Load settings and translation memory from storage
-    chrome.storage.local.get(['enabled', 'translationMemory'], (result) => {
-        isEnabled = result.enabled !== false; // Default to true
-        translationMemory = result.translationMemory || {};
-        
-        if (isEnabled) {
-            console.log('Zendesk Auto Translator: Enabled');
-            init();
+    const settings = {
+        provider: 'google',
+        libretranslateUrl: '',
+        libretranslateApiKey: ''
+    };
+
+    function normalizeUrl(u) {
+        return (u || '').trim().replace(/\/+$/, '');
+    }
+
+    chrome.storage.local.get(
+        ['enabled', 'translationMemory', 'provider', 'libretranslateUrl', 'libretranslateApiKey'],
+        (result) => {
+            isEnabled = result.enabled !== false;
+            translationMemory = result.translationMemory || {};
+            settings.provider = result.provider || 'google';
+            settings.libretranslateUrl = normalizeUrl(result.libretranslateUrl);
+            settings.libretranslateApiKey = result.libretranslateApiKey || '';
+
+            if (isEnabled) {
+                console.log('Zendesk Auto Translator: Enabled, provider=' + settings.provider);
+                init();
+            }
         }
+    );
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (changes.provider) settings.provider = changes.provider.newValue || 'google';
+        if (changes.libretranslateUrl) settings.libretranslateUrl = normalizeUrl(changes.libretranslateUrl.newValue);
+        if (changes.libretranslateApiKey) settings.libretranslateApiKey = changes.libretranslateApiKey.newValue || '';
     });
-    
-    // Listen for enable/disable from popup
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'toggle') {
             isEnabled = request.enabled;
-            if (isEnabled) {
-                init();
-            } else {
-                cleanup();
-            }
+            if (isEnabled) init(); else cleanup();
             sendResponse({ success: true });
         } else if (request.action === 'getStatus') {
-            sendResponse({ 
+            sendResponse({
                 enabled: isEnabled,
                 detectedLanguage: detectedCustomerLanguage ? getLanguageDisplay(detectedCustomerLanguage) : null,
-                memorySize: Object.keys(translationMemory).length
+                memorySize: Object.keys(translationMemory).length,
+                provider: settings.provider
             });
+        } else if (request.action === 'settingsUpdated') {
+            // storage.onChanged handles the actual refresh; just acknowledge.
+            sendResponse({ success: true });
         }
     });
-    
+
     // ============================================
-    // TRANSLATION API
+    // TOAST HELPER
     // ============================================
-    
+
+    function showToast(message, kind = 'info') {
+        try {
+            const el = document.createElement('div');
+            el.className = `zt-toast zt-toast-${kind}`;
+            el.textContent = message;
+            document.body.appendChild(el);
+            requestAnimationFrame(() => el.classList.add('zt-toast-show'));
+            setTimeout(() => {
+                el.classList.remove('zt-toast-show');
+                setTimeout(() => el.remove(), 300);
+            }, 4000);
+        } catch (_) {
+            // body may not be ready; silent.
+        }
+    }
+
+    // ============================================
+    // TRANSLATION API (provider-aware)
+    // ============================================
+
+    const REQUEST_TIMEOUT_MS = 8000;
+
+    async function fetchWithTimeout(url, options = {}) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+        try {
+            return await fetch(url, { ...options, signal: ctrl.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    function readableError(err, providerLabel) {
+        if (err && err.name === 'AbortError') return `${providerLabel} timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`;
+        return `${providerLabel} error: ${(err && err.message) || err}`;
+    }
+
+    async function googleDetect(text) {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text.slice(0, 500))}`;
+        const res = await fetchWithTimeout(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data[2] || 'unknown';
+    }
+
+    async function googleTranslate(text, target, source) {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${source}&tl=${target}&dt=t&q=${encodeURIComponent(text)}`;
+        const res = await fetchWithTimeout(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        let out = '';
+        if (data[0]) data[0].forEach(item => { if (item[0]) out += item[0]; });
+        return out;
+    }
+
+    function requireLibreUrl() {
+        if (!settings.libretranslateUrl) {
+            throw new Error('Server URL not set. Open the extension popup to configure it.');
+        }
+        return settings.libretranslateUrl;
+    }
+
+    async function libreFetch(path, body) {
+        const base = requireLibreUrl();
+        if (settings.libretranslateApiKey) body.api_key = settings.libretranslateApiKey;
+        const res = await fetchWithTimeout(`${base}${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            let detail = '';
+            try { detail = (await res.json()).error || ''; } catch (_) {}
+            throw new Error(`HTTP ${res.status}${detail ? ' — ' + detail : ''}`);
+        }
+        return res.json();
+    }
+
+    async function libreDetect(text) {
+        const data = await libreFetch('/detect', { q: text.slice(0, 500) });
+        const top = Array.isArray(data) ? data[0] : data;
+        return (top && top.language) || 'unknown';
+    }
+
+    async function libreTranslate(text, target, source) {
+        const data = await libreFetch('/translate', {
+            q: text,
+            source: source || 'auto',
+            target,
+            format: 'text'
+        });
+        return data.translatedText || '';
+    }
+
+    function providerLabel() {
+        return settings.provider === 'libretranslate' ? 'LibreTranslate' : 'Google Translate';
+    }
+
     async function detectLanguage(text) {
         try {
-            const response = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text.slice(0, 500))}`);
-            const data = await response.json();
-            return data[2] || 'unknown';
-        } catch (error) {
-            console.error('Language detection error:', error);
+            return settings.provider === 'libretranslate' ? await libreDetect(text) : await googleDetect(text);
+        } catch (err) {
+            console.error('[zt] Language detection error:', err);
+            showToast(readableError(err, providerLabel()), 'error');
             return 'unknown';
         }
     }
-    
-    async function translateWithGoogle(text, targetLang = 'en', sourceLang = 'auto') {
-        // Check translation memory first
-        const memoryKey = `${text.slice(0, 100)}_${targetLang}`;
+
+    async function translate(text, targetLang = 'en', sourceLang = 'auto') {
+        const providerKey = settings.provider === 'libretranslate' ? 'libre' : 'google';
+        const memoryKey = `${providerKey}:${text.slice(0, 100)}_${targetLang}`;
         if (translationMemory[memoryKey]) {
-            console.log('Using cached translation');
+            console.log('[zt] Using cached translation');
             return translationMemory[memoryKey];
         }
-        
+
         try {
-            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            let translatedText = '';
-            if (data[0]) {
-                data[0].forEach(item => {
-                    if (item[0]) {
-                        translatedText += item[0];
-                    }
-                });
+            const out = settings.provider === 'libretranslate'
+                ? await libreTranslate(text, targetLang, sourceLang)
+                : await googleTranslate(text, targetLang, sourceLang);
+
+            if (out) {
+                const keys = Object.keys(translationMemory);
+                if (keys.length >= 100) delete translationMemory[keys[0]];
+                translationMemory[memoryKey] = out;
+                chrome.storage.local.set({ translationMemory });
             }
-            
-            // Store in translation memory (limit to 100 most recent)
-            const keys = Object.keys(translationMemory);
-            if (keys.length >= 100) {
-                delete translationMemory[keys[0]]; // Remove oldest
-            }
-            translationMemory[memoryKey] = translatedText;
-            
-            // Save to storage
-            chrome.storage.local.set({ translationMemory });
-            
-            return translatedText || text;
-        } catch (error) {
-            console.error('Translation error:', error);
+            return out || text;
+        } catch (err) {
+            console.error('[zt] Translation error:', err);
+            showToast(readableError(err, providerLabel()), 'error');
             return text;
         }
     }
@@ -171,7 +276,7 @@
             translateBtn.disabled = true;
             translateBtn.textContent = '⏳ Translating...';
             
-            const translated = await translateWithGoogle(textContent, 'en', langCode);
+            const translated = await translate(textContent, 'en', langCode);
             
             const resultDiv = document.createElement('div');
             resultDiv.className = 'zt-translation-result';
@@ -418,7 +523,7 @@
             translateBtn.innerHTML = '⏳';
             translateBtn.style.cursor = 'wait';
 
-            const translated = await translateWithGoogle(replyText, detectedCustomerLanguage, 'en');
+            const translated = await translate(replyText, detectedCustomerLanguage, 'en');
 
             const ok = await replaceReplyText(replyArea, translated);
 

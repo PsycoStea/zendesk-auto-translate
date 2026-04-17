@@ -1,303 +1,103 @@
-# Zendesk Auto Translator - Chrome Extension
-## Technical Documentation
+# Zendesk Auto Translator
+
+Internal Chrome extension for the **Mac Group Global** customer service team. Auto-detects languages in Zendesk customer messages and provides one-click translation in both directions, using either Google Translate or a self-hosted LibreTranslate instance.
+
+- Private GitHub repo: https://github.com/PsycoStea/zendesk-auto-translate
+- Not published to the Chrome Web Store — distribution is via clone + load unpacked.
 
 ---
 
-## 📁 File Structure
+## Features
+
+- Language badge and "Translate to English" button on non-English customer messages.
+- Flag button in the reply toolbar that translates your English reply back into the customer's detected language.
+- Reply translation uses CKEditor-aware paste strategies so text actually sticks (see v1.0.7 notes below).
+- Translation memory: up to 100 recent translations cached locally per browser, keyed by provider.
+- Two selectable providers from the popup:
+  - **Google Translate** — free, uses the public `translate.googleapis.com` endpoint (no key).
+  - **LibreTranslate** — your own self-hosted server. Configure URL + optional API key in the popup; Chrome prompts once for permission to reach the host.
+- Enable/disable toggle that correctly re-renders UI on existing messages when toggled back on.
+- Inline error toasts for timeouts, HTTP failures, or missing configuration.
+
+---
+
+## Install (for teammates)
+
+1. `git clone https://github.com/PsycoStea/zendesk-auto-translate.git` (or download the ZIP from GitHub and unzip it).
+2. Open Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
+3. Click **Load unpacked** and select the cloned folder.
+4. Pin the extension from the puzzle-piece menu so the icon is always visible.
+
+Updating to a newer version: `git pull` in the folder, then click the reload icon on the extension card and hard-refresh any open Zendesk tabs (`Cmd+Shift+R` / `Ctrl+Shift+R`).
+
+See `INSTALLATION_GUIDE.md` for the end-user walkthrough, including how to configure LibreTranslate.
+
+---
+
+## File layout
 
 ```
-zendesk-translator-extension/
-├── manifest.json          # Extension configuration
-├── content.js            # Main logic (runs on Zendesk pages)
-├── background.js         # Service worker (background tasks)
-├── popup.html            # Extension popup UI
-├── popup.js              # Popup logic
-├── styles.css            # UI styling
-├── icon16.png            # Extension icon (16x16)
-├── icon48.png            # Extension icon (48x48)
-├── icon128.png           # Extension icon (128x128)
-├── INSTALLATION_GUIDE.md # User guide for your team
-└── README.md             # This file
-```
-
----
-
-## 🔧 How It Works
-
-### Architecture:
-
-1. **content.js** - Runs on all Zendesk pages
-   - Detects customer message language
-   - Adds translation UI (badges, buttons)
-   - Handles translation requests
-   - Manages translation memory cache
-
-2. **background.js** - Service worker
-   - Handles extension installation/updates
-   - Keeps service worker alive
-   - Minimal functionality (by design for stability)
-
-3. **popup.html/js** - Extension popup
-   - Shows current status
-   - Enable/disable toggle
-   - Translation cache stats
-
-4. **styles.css** - UI styling
-   - Matches Zendesk design
-   - Clean, professional look
-
----
-
-## 🎯 Key Features
-
-### Translation Memory
-- Caches up to 100 recent translations
-- Stored locally in Chrome storage
-- Automatically prunes oldest entries
-- Significantly speeds up repeat translations
-
-### Language Detection
-- Uses Google Translate's auto-detect
-- Samples first 500 characters
-- Updates reply button automatically
-
-### Smart DOM Handling
-- MutationObserver watches for new messages
-- Processes messages only once (prevents duplicates)
-- Handles Zendesk's dynamic UI updates
-
----
-
-## 🔄 Future Enhancements (Ideas)
-
-### Short-term (Easy):
-- [ ] Keyboard shortcuts (Ctrl+Shift+T to translate)
-- [ ] Copy translation button
-- [ ] Translation history viewer
-- [ ] Export translation cache
-
-### Medium-term (Moderate):
-- [ ] Microsoft Translator option (better quality)
-- [ ] DeepL integration (premium quality)
-- [ ] Custom phrase library (team-shared)
-- [ ] Statistics dashboard
-
-### Long-term (Complex):
-- [ ] Auto-translate on ticket open (optional)
-- [ ] Quality rating system
-- [ ] Team collaboration features
-- [ ] Analytics and reporting
-
----
-
-## 🛠️ Making Changes
-
-### To modify the extension:
-
-1. **Edit the relevant file** (content.js, popup.html, etc.)
-
-2. **Go to `chrome://extensions/`**
-
-3. **Click the reload icon** on the extension card
-
-4. **Hard refresh Zendesk** (`Ctrl+Shift+R`)
-
-### Common modifications:
-
-#### Change button colors:
-Edit `styles.css` - look for `.zt-translate-btn` background color
-
-#### Add new languages:
-Edit `content.js` - add to `languageInfo` object
-
-#### Change translation memory size:
-Edit `content.js` - change `if (keys.length >= 100)` to your desired limit
-
-#### Modify UI text:
-Edit `content.js` for button text, `popup.html` for popup text
-
----
-
-## 📦 Packaging for Distribution
-
-### Option 1: ZIP file (Current method)
-```bash
-# Zip the extension folder
-zip -r zendesk-translator-v1.0.0.zip zendesk-translator-extension/
-
-# Share the ZIP with team
-# They unzip and load unpacked
-```
-
-### Option 2: CRX file (Easier for team)
-1. Go to `chrome://extensions/`
-2. Click "Pack extension"
-3. Select the extension folder
-4. Creates a `.crx` file
-5. Team can drag-and-drop to install
-
-**Note**: CRX installation may show security warnings (normal for unpublished extensions)
-
----
-
-## 🐛 Debugging
-
-### Check if extension is running:
-1. Open Zendesk ticket
-2. Press `F12` (DevTools)
-3. Console tab
-4. Should see: "Zendesk Auto Translator initializing..."
-
-### Common issues:
-
-**Translation not replacing text:**
-- Check if using contenteditable div (not textarea)
-- Verify innerHTML is being set
-- Check if Zendesk updated their DOM structure
-
-**Button not appearing:**
-- Check if selector still matches Zendesk's HTML
-- Verify MutationObserver is running
-- Check console for errors
-
-**Language not detecting:**
-- Verify Google Translate API is accessible
-- Check network tab for failed requests
-- Confirm text is > 10 characters
-
-### Useful console commands:
-```javascript
-// Check if extension loaded
-console.log(document.querySelector('.zt-translate-badge'));
-
-// Check translation memory
-chrome.storage.local.get('translationMemory', (r) => console.log(r));
-
-// Check enabled state
-chrome.storage.local.get('enabled', (r) => console.log(r));
-
-// Clear translation memory
-chrome.storage.local.set({ translationMemory: {} });
+manifest.json          Extension config (Manifest V3)
+content.js             Runs on *.zendesk.com — UI, provider dispatch, reply-paste strategies
+background.js          Service worker — installs defaults
+popup.html / popup.js  Toolbar popup: toggle, provider selector, LibreTranslate URL/key
+styles.css             UI styling, including toast
+icon*.png              Extension icons
+INSTALLATION_GUIDE.md  End-user setup + LibreTranslate configuration
+QA_CHECKLIST.md        Pre-release smoke test
+README.md              This file
 ```
 
 ---
 
-## 🔐 Permissions Explained
+## Providers
 
-### Required permissions:
+### Google Translate
+Default. The extension calls `https://translate.googleapis.com/translate_a/single` — the same unofficial public endpoint the Google Translate web UI uses. No API key is required. Be aware this endpoint is undocumented and could be rate-limited or changed at any time; if that happens, switch to LibreTranslate.
 
-**storage**
-- Saves enable/disable state
-- Stores translation memory cache
-- Persists settings across sessions
+### LibreTranslate
+Pick "LibreTranslate (self-hosted)" in the popup, enter your server URL (e.g. `https://libretranslate.mydomain.com`), optional API key, and click **Save settings**. Chrome will prompt once for permission to make requests to that host — accept it.
 
-**activeTab**
-- Allows popup to query current tab state
-- Shows detected language in popup
+The extension calls:
+- `POST {url}/detect` — body `{ q }` (plus `api_key` if set).
+- `POST {url}/translate` — body `{ q, source, target, format: "text" }` (plus `api_key` if set).
 
-**host_permissions (*.zendesk.com)**
-- Runs content script on all Zendesk domains
-- Adds translation UI to Zendesk pages
-
-**host_permissions (translate.googleapis.com)**
-- Allows API calls to Google Translate
-- Required for translation functionality
+If the server is unreachable you'll see an error toast; the extension will not silently fall back to Google — switch providers explicitly in the popup if needed.
 
 ---
 
-## 📊 Performance Optimization
+## How reply translation works
 
-### Current optimizations:
+Zendesk's reply composer is CKEditor 5 + React. Direct DOM edits are reverted by CKEditor's model, which is why earlier attempts with `innerHTML`, `execCommand('insertText')`, and clipboard + `execCommand('paste')` all silently failed — the text would appear for a moment and vanish. v1.0.7 tries these strategies in order and uses the first one that makes the new text stick:
 
-1. **Translation memory** - Caches frequently used translations
-2. **DOM efficiency** - Only processes each message once
-3. **Event delegation** - Minimal event listeners
-4. **Lazy loading** - UI only added when needed
+1. `ckeditor-api` — look for the CKEditor instance on the editor DOM node (`.ckeditorInstance`) and replace via `editor.model.change(...)`.
+2. `synthetic-paste` — dispatch a constructed `ClipboardEvent('paste')` with a `DataTransfer` payload. **This is the one that works in current Zendesk.**
+3. `beforeinput` — dispatch an `InputEvent('beforeinput', { inputType: 'insertReplacementText' })`.
+4. `clipboard-execpaste` — the old `navigator.clipboard.writeText` + `execCommand('paste')` path as a last resort, with the user's clipboard restored afterwards.
 
-### Potential improvements:
-
-- Pre-translate common phrases on load
-- Batch multiple translations
-- Use IndexedDB for larger cache
-- Add service worker caching
+The winning strategy is logged to the page console as `[zt] Reply replaced via strategy: <name>`.
 
 ---
 
-## 🔄 Updating for Team
+## Version history
 
-### When you make changes:
+### v1.0.7 (current)
+- LibreTranslate support alongside Google Translate, selectable from the popup with runtime host-permission request.
+- Error toasts for translation/detection failures; `AbortController` timeouts on all translator requests (8s).
+- Reply translation rewritten with a layered CKEditor-aware strategy. `synthetic-paste` is what sticks in current Zendesk.
+- Re-enable bug fixed — disabling then re-enabling now restores the badge/button on already-loaded customer messages.
+- Popup simplified: removed the "How it works" block, added provider settings, updated footer to Mac Group Global.
+- Translation-memory cache keys are now provider-prefixed so Google and LibreTranslate results don't bleed.
 
-1. **Update version** in `manifest.json`
-   ```json
-   "version": "1.0.1"
-   ```
-
-2. **Update version** in `popup.html`
-   ```html
-   <span class="version">v1.0.1</span>
-   ```
-
-3. **Test thoroughly** on your machine
-
-4. **Package the extension** (ZIP or CRX)
-
-5. **Send to team** with update notes
-
-6. **Team installs** using same method as initial install
+### v1.0.6
+- Initial functional MVP with a clipboard-based reply workaround (silently reverted by CKEditor in some cases — fixed in 1.0.7).
+- Google Translate only.
+- Translation memory, enable/disable toggle, language badge, customer-message translation button.
 
 ---
 
-## 🆘 Support Checklist
+## Security / privacy
 
-When team members report issues:
-
-- [ ] Is extension enabled in chrome://extensions/?
-- [ ] Is toggle switch ON in popup?
-- [ ] Did they hard refresh Zendesk page?
-- [ ] Are they on a Zendesk page (*.zendesk.com)?
-- [ ] Any console errors?
-- [ ] Chrome version (should be recent)?
-- [ ] Did Zendesk update their interface recently?
-
----
-
-## 📝 Notes
-
-### Why Chrome Extension vs Tampermonkey?
-
-**Advantages:**
-- ✅ More reliable (doesn't depend on Tampermonkey)
-- ✅ Better permissions control
-- ✅ Cleaner UI integration
-- ✅ Easier to distribute to team
-- ✅ Can use Chrome storage API
-- ✅ Professional appearance
-
-**Considerations:**
-- Requires manual updates (no auto-update without Chrome Web Store)
-- Slightly more complex to develop
-- Needs icon assets
-
-### Security notes:
-
-- All data stays local
-- No external servers (except Google Translate API)
-- No tracking or analytics
-- No personal data collected
-- Open source (team can audit code)
-
----
-
-## 🎯 Success Metrics
-
-Track these to measure effectiveness:
-
-- Number of translations per day
-- Average response time improvement
-- Team adoption rate
-- Cache hit rate (translations reused)
-- Bug reports / issues
-
----
-
-**Built with stability in mind. Happy translating! 🚀**
+- All settings and the translation cache are stored locally via `chrome.storage.local`. Nothing is synced.
+- No analytics, no telemetry.
+- Outbound network calls are limited to `https://*.zendesk.com/*`, `https://translate.googleapis.com/*`, and — if you've configured LibreTranslate — the specific host you granted permission for.

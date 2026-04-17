@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
@@ -10,6 +10,10 @@
   "host_permissions": [
     "https://*.zendesk.com/*",
     "https://translate.googleapis.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "action": {
     "default_popup": "popup.html",

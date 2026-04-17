@@ -1,290 +1,96 @@
-# Zendesk Auto Translator - Chrome Extension
-## Installation & Usage Guide for Refurbed Team
+# Installation Guide — Zendesk Auto Translator
+
+Internal extension for the Mac Group Global customer service team. Not on the Chrome Web Store; installed manually from our private GitHub repo.
 
 ---
 
-## 📦 What's Included
+## 1. Get the code
 
-- ✅ **Automatic language detection** on customer messages
-- ✅ **One-click translation** to English for incoming messages
-- ✅ **Smart reply translation** - Translates your English replies back to customer's language
-- ✅ **Translation memory** - Caches common phrases for faster performance
-- ✅ **Enable/disable toggle** - Simple popup control
-- ✅ **Works offline** - No external dependencies once installed
+Option A — git (recommended, so you can pull updates):
 
----
+```
+git clone https://github.com/PsycoStea/zendesk-auto-translate.git
+```
 
-## 🚀 Installation Instructions
-
-### Method 1: Load Unpacked Extension (For Testing)
-
-1. **Download the extension folder**
-   - You should have received the `zendesk-translator-extension` folder
-   - Save it to a permanent location (don't delete this folder!)
-
-2. **Open Chrome Extensions Page**
-   - Open Google Chrome
-   - Go to: `chrome://extensions/`
-   - Or: Menu (⋮) → More Tools → Extensions
-
-3. **Enable Developer Mode**
-   - Toggle "Developer mode" switch in top-right corner (turn it ON)
-
-4. **Load the Extension**
-   - Click "Load unpacked" button
-   - Navigate to the `zendesk-translator-extension` folder
-   - Click "Select Folder"
-
-5. **Verify Installation**
-   - You should see "Zendesk Auto Translator" in your extensions list
-   - The extension icon appears in your Chrome toolbar
-   - Status should show "Enabled"
-
-6. **Pin the Extension (Optional but Recommended)**
-   - Click the puzzle piece icon in Chrome toolbar
-   - Find "Zendesk Auto Translator"
-   - Click the pin icon to keep it visible
-
-### Method 2: Install Packaged Extension (For Team Distribution)
-
-Coming soon - I'll create a `.crx` file for easier distribution to your team.
+Option B — download ZIP from https://github.com/PsycoStea/zendesk-auto-translate and unzip it somewhere permanent. **Don't delete the folder** — Chrome loads the extension directly from it.
 
 ---
 
-## 💡 How to Use
+## 2. Load into Chrome
 
-### For Customer Messages (Incoming):
-
-1. **Open any Zendesk ticket** with a non-English message
-
-2. **Automatic detection**
-   - A colored badge appears showing the language (e.g., 🇩🇪 German)
-   - A blue "📝 Translate to English" button appears
-
-3. **Click the translate button**
-   - Translation appears in a blue box below the button
-   - Formatted with proper line breaks
-
-4. **Read the translation** and respond to the customer
-
-### For Your Replies (Outgoing):
-
-1. **Write your response in English** in the reply box
-
-2. **Look at the toolbar**
-   - At the bottom of the reply box, you'll see a flag icon (e.g., 🇩🇪)
-   - This shows which language it will translate to
-
-3. **Click the flag icon**
-   - Your English text is instantly replaced with the translation
-   - The icon shows ✓ when done
-
-4. **Send the reply** as normal
+1. Open `chrome://extensions/`.
+2. Toggle **Developer mode** on (top right).
+3. Click **Load unpacked**.
+4. Select the folder from step 1.
+5. You should now see "Zendesk Auto Translator" in the list.
+6. Click the puzzle-piece icon in Chrome's toolbar and pin the extension so its icon stays visible.
 
 ---
 
-## ⚙️ Extension Settings
+## 3. Verify it works
 
-### Access the Popup:
+1. Open any Zendesk ticket that has a non-English customer message.
+2. A colored badge (e.g. `🇩🇪 German`) should appear on the message, with a "Translate to English" button underneath.
+3. Click the button — the translation appears in a blue box.
+4. In the reply area, the toolbar shows a flag button matching the customer's language.
+5. Type your reply in English, click the flag, and the text should be replaced with the translated version and stay replaced.
 
-- Click the extension icon in your Chrome toolbar
-- Or click the puzzle piece → Zendesk Auto Translator
-
-### Popup Shows:
-
-- **Status**: Active or Disabled
-- **Detected Language**: Currently detected customer language
-- **Cached Translations**: Number of saved translations (faster loading)
-- **Enable/Disable Toggle**: Turn translator on/off
-
-### To Disable Temporarily:
-
-- Click extension icon
-- Toggle the switch to OFF
-- All translation UI disappears from Zendesk
-- Toggle back ON to re-enable
+If none of that appears, hard-refresh the Zendesk tab (`Cmd+Shift+R` on Mac, `Ctrl+Shift+R` on Windows).
 
 ---
 
-## 🎯 Supported Languages
+## 4. Choose a translation provider
 
-All EU languages including:
-- 🇩🇪 German, 🇫🇷 French, 🇪🇸 Spanish, 🇮🇹 Italian
-- 🇳🇱 Dutch, 🇵🇱 Polish, 🇵🇹 Portuguese
-- 🇸🇪 Swedish, 🇩🇰 Danish, 🇫🇮 Finnish, 🇳🇴 Norwegian
-- 🇨🇿 Czech, 🇸🇰 Slovak, 🇭🇺 Hungarian, 🇷🇴 Romanian
-- 🇬🇷 Greek, 🇧🇬 Bulgarian, 🇭🇷 Croatian, 🇸🇮 Slovenian
-- 🇪🇪 Estonian, 🇱🇻 Latvian, 🇱🇹 Lithuanian
-- Plus 100+ more languages
+Click the extension icon in Chrome's toolbar to open the popup. You'll see a **Translation Provider** section with two options:
 
----
+### Google Translate (default)
+Nothing to configure. Free, uses Google's public endpoint. Good enough for daily use but undocumented — if it ever stops working, switch to LibreTranslate.
 
-## 🔧 Troubleshooting
+### LibreTranslate (self-hosted)
+1. Select the **LibreTranslate (self-hosted)** radio.
+2. **Server URL** — the full URL to your LibreTranslate instance, e.g. `https://libretranslate.mydomain.com`. No trailing slash.
+3. **API key (optional)** — only needed if your LibreTranslate instance enforces one. Leave blank otherwise.
+4. Click **Save settings**.
+5. Chrome will prompt you for permission to reach that host — click **Allow**.
+6. The status row at the top of the popup updates to show the active provider.
 
-### Extension not showing up on Zendesk?
-
-1. **Check if extension is enabled**
-   - Go to `chrome://extensions/`
-   - Make sure "Zendesk Auto Translator" toggle is ON
-
-2. **Refresh the Zendesk page**
-   - Press `Ctrl+Shift+R` (Windows) or `Cmd+Shift+R` (Mac)
-   - This forces a hard refresh
-
-3. **Check the popup**
-   - Click extension icon
-   - Make sure toggle switch is ON (blue)
-
-### Translation not working?
-
-1. **Make sure you've detected a language first**
-   - Click "Translate to English" on a customer message first
-   - This detects the language for reply translation
-
-2. **Check your internet connection**
-   - Translation requires Google Translate API (free)
-   - No internet = no translation
-
-3. **Try refreshing the page**
-   - Sometimes Zendesk updates its interface
-   - A refresh usually fixes it
-
-### Reply translation not replacing text?
-
-1. **Make sure the reply box is active**
-   - Click inside the reply box before translating
-   - The box should have a blue border
-
-2. **Write some text first**
-   - The translator needs text to translate
-   - Empty box = nothing happens
-
-3. **Check if customer language was detected**
-   - The flag icon should show a country flag (not 🌐)
-   - If showing 🌐, translate a customer message first
-
-### Extension disappeared after Chrome update?
-
-1. **Re-enable the extension**
-   - Go to `chrome://extensions/`
-   - Find "Zendesk Auto Translator"
-   - Toggle it ON
-
-2. **Reload the extension**
-   - Click the reload icon (circular arrow) on the extension card
+You can switch providers at any time — translations are cached separately per provider, so switching won't lose anything.
 
 ---
 
-## 🔄 Updating the Extension
+## 5. Everyday use
 
-When a new version is released:
-
-1. **Delete the old folder** (optional - can keep as backup)
-
-2. **Download the new version folder**
-
-3. **Go to `chrome://extensions/`**
-
-4. **Click reload button** on "Zendesk Auto Translator" card
-   - Or remove the extension and re-add the new folder
-
-5. **Refresh all Zendesk tabs**
+- **Customer message** → click "Translate to English" on the message. Blue box with the translation appears.
+- **Your reply** → type in English, click the flag button in the reply toolbar. Your text is replaced with the translation.
+- **Disable temporarily** → click the extension icon and toggle the Enable switch. All translation UI disappears until you toggle it back on.
 
 ---
 
-## 💾 Data & Privacy
+## 6. Getting updates
 
-### What does the extension store?
+Updates are pushed to the GitHub repo. To update your local copy:
 
-- **Translation cache**: Up to 100 recent translations (saves time)
-- **Enable/disable state**: Your preference
-- **Detected language**: Current ticket's language (temporary)
-
-### What does it NOT store?
-
-- ❌ Customer messages or content
-- ❌ Your replies or messages
-- ❌ Ticket numbers or personal data
-- ❌ Login credentials
-
-### Where is data stored?
-
-- Locally in Chrome's storage (stays on your computer)
-- Never sent to any external server
-- Cleared when you uninstall the extension
-
-### Internet connections:
-
-- Only connects to Google Translate API (translate.googleapis.com)
-- No tracking, no analytics, no third parties
+- If you used `git clone`: `git pull` in the folder, then open `chrome://extensions`, click the reload (↻) icon on the extension card, and hard-refresh any open Zendesk tabs.
+- If you downloaded a ZIP: download the new ZIP, replace the old folder, then reload in `chrome://extensions`.
 
 ---
 
-## 👥 Sharing with Team
+## Troubleshooting
 
-### To share with other team members:
+**Nothing shows up on Zendesk.** Hard-refresh the Zendesk tab (`Cmd+Shift+R`). If still nothing, check `chrome://extensions` — make sure the extension is enabled and has no error badge.
 
-1. **Zip the extension folder**
-   - Right-click the `zendesk-translator-extension` folder
-   - Choose "Compress" or "Send to → Compressed folder"
+**Reply text doesn't change or immediately reverts.** Open DevTools on the Zendesk tab (`F12` or right-click → Inspect) and look for a `[zt] Reply replaced via strategy: ...` log when you click the flag. If you see `[zt] All reply replacement strategies failed`, tell the developer — Zendesk's composer may have changed.
 
-2. **Send the ZIP file** to your team via:
-   - Email
-   - Slack
-   - Google Drive
-   - Any file sharing method
+**Translation error toast appears.** The message tells you which provider failed and why. For LibreTranslate, check the URL in the popup is reachable from your browser (try opening `{URL}/languages` in a new tab). For Google, it's usually a rate-limit; wait a minute and retry, or switch to LibreTranslate.
 
-3. **They follow the same installation steps** above
+**Extension says "Extension context invalidated" in the console.** You reloaded the extension but not the tab. Refresh the Zendesk tab.
 
-### Important notes:
-
-- Each person installs independently
-- Translation cache is NOT shared between users
-- Each person can enable/disable independently
+**Toggle re-enable doesn't bring back buttons on old messages.** This was a bug in v1.0.6 — upgrade to v1.0.7 (`git pull`).
 
 ---
 
-## 📊 Performance
+## Privacy
 
-- **Speed**: ~500ms per translation (very fast)
-- **Memory**: ~2-5MB RAM usage (very light)
-- **Cache**: Stores up to 100 translations (~50KB)
-- **Network**: Only uses bandwidth during active translation
-
----
-
-## 🆘 Support
-
-If you encounter issues:
-
-1. **Check this guide's troubleshooting section** above
-2. **Try disabling and re-enabling** the extension
-3. **Check Chrome console** for errors:
-   - Press `F12` on Zendesk page
-   - Click "Console" tab
-   - Look for red error messages
-   - Screenshot and share with tech lead
-
-4. **Contact the developer** (that's me!) with:
-   - Screenshot of the issue
-   - Browser console errors (if any)
-   - What you were trying to do
-
----
-
-## 📝 Version History
-
-### v1.0.0 (Current)
-- Initial release
-- Google Translate integration
-- Translation memory
-- Enable/disable toggle
-- Support for 100+ languages
-
----
-
-## 🎉 Enjoy Faster Customer Support!
-
-This extension is built specifically for the Refurbed customer service team.
-
-**Made with ❤️ for better customer support**
+- Settings and the translation cache are stored locally in your browser via `chrome.storage.local` — nothing syncs to Google or anywhere else.
+- The only outbound network calls are to `*.zendesk.com`, `translate.googleapis.com` (when using Google), and your own LibreTranslate host (when using LibreTranslate).
+- No analytics, no telemetry, no third parties.
