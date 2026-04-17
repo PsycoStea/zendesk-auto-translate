@@ -63,6 +63,37 @@
     });
 
     // ============================================
+    // EXTENSION CONTEXT GUARD
+    // ============================================
+    //
+    // When the extension is reloaded while a Zendesk tab is open, the content
+    // script in that tab loses its connection to chrome.* APIs. Any call to
+    // chrome.storage / chrome.runtime throws "Extension context invalidated."
+    // Guard the entry points and warn the user once so translation errors
+    // don't masquerade as provider failures.
+
+    let contextInvalidatedNotified = false;
+
+    function isExtensionContextValid() {
+        try { return !!(chrome.runtime && chrome.runtime.id); }
+        catch (_) { return false; }
+    }
+
+    function guardExtensionContext() {
+        if (isExtensionContextValid()) return true;
+        if (!contextInvalidatedNotified) {
+            contextInvalidatedNotified = true;
+            try { showToast('Extension was reloaded — please refresh this Zendesk tab.', 'warn'); } catch (_) {}
+        }
+        return false;
+    }
+
+    function safeStorageSet(obj) {
+        if (!isExtensionContextValid()) return;
+        try { chrome.storage.local.set(obj); } catch (_) { /* context gone between checks */ }
+    }
+
+    // ============================================
     // TOAST HELPER
     // ============================================
 
@@ -165,6 +196,7 @@
     }
 
     async function detectLanguage(text) {
+        if (!guardExtensionContext()) return 'unknown';
         try {
             return settings.provider === 'libretranslate' ? await libreDetect(text) : await googleDetect(text);
         } catch (err) {
@@ -175,6 +207,8 @@
     }
 
     async function translate(text, targetLang = 'en', sourceLang = 'auto') {
+        if (!guardExtensionContext()) return text;
+
         const providerKey = settings.provider === 'libretranslate' ? 'libre' : 'google';
         const memoryKey = `${providerKey}:${text.slice(0, 100)}_${targetLang}`;
         if (translationMemory[memoryKey]) {
@@ -191,7 +225,7 @@
                 const keys = Object.keys(translationMemory);
                 if (keys.length >= 100) delete translationMemory[keys[0]];
                 translationMemory[memoryKey] = out;
-                chrome.storage.local.set({ translationMemory });
+                safeStorageSet({ translationMemory });
             }
             return out || text;
         } catch (err) {
@@ -308,47 +342,207 @@
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+    // CKEditor 5 exposes the editor instance on the element with class
+    // .ck-editor__editable / .ck-editor__editable_inline (the actual
+    // contenteditable root), not on arbitrary wrapper divs. Search the
+    // supplied node, then walk up, then look at descendants of the composer
+    // subtree and finally the whole document.
     function findCKEditorInstance(startNode) {
-        let node = startNode;
+        if (startNode && startNode.ckeditorInstance) return startNode.ckeditorInstance;
+
+        let node = startNode ? startNode.parentElement : null;
         while (node && node !== document.body) {
             if (node.ckeditorInstance) return node.ckeditorInstance;
             node = node.parentElement;
         }
-        const candidates = document.querySelectorAll('.ck-editor, .ck-editor__main, .ck.ck-editor, [class*="ck-editor"]');
-        for (const c of candidates) {
-            if (c.ckeditorInstance) return c.ckeditorInstance;
+
+        const editableSelectors = [
+            '.ck-editor__editable_inline',
+            '.ck-editor__editable',
+            '[class*="ck-editor__editable"]',
+            '.ck-editor'
+        ];
+
+        if (startNode) {
+            for (const sel of editableSelectors) {
+                const match = startNode.querySelector ? startNode.querySelector(sel) : null;
+                if (match && match.ckeditorInstance) return match.ckeditorInstance;
+            }
+        }
+        for (const sel of editableSelectors) {
+            const nodes = document.querySelectorAll(sel);
+            for (const n of nodes) {
+                if (n.ckeditorInstance) return n.ckeditorInstance;
+            }
         }
         return null;
     }
 
-    function contentMatches(replyArea, translated) {
+    // ---- HTML ↔ markdown-ish roundtrip ----
+    //
+    // Zendesk's composer accepts HTML on paste and serializes rich text as
+    // HTML. To preserve formatting through a translation provider we convert
+    // the reply to a lightweight markdown representation (which translation
+    // engines preserve reliably), translate it as text, then rehydrate to
+    // HTML before injection.
+
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function serializeNodeAsMarkdown(node) {
+        let out = '';
+        for (const child of node.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE) {
+                out += child.textContent;
+                continue;
+            }
+            if (child.nodeType !== Node.ELEMENT_NODE) continue;
+            const tag = child.tagName.toLowerCase();
+            const inner = serializeNodeAsMarkdown(child);
+            switch (tag) {
+                case 'br':
+                    out += '\n';
+                    break;
+                case 'p':
+                case 'div':
+                    out += (out && !out.endsWith('\n') ? '\n' : '') + inner + '\n';
+                    break;
+                case 'strong':
+                case 'b':
+                    out += inner ? `**${inner}**` : '';
+                    break;
+                case 'em':
+                case 'i':
+                    out += inner ? `*${inner}*` : '';
+                    break;
+                case 'u':
+                    out += inner ? `__${inner}__` : '';
+                    break;
+                case 'ul':
+                case 'ol':
+                    out += (out && !out.endsWith('\n') ? '\n' : '') + inner;
+                    break;
+                case 'li':
+                    out += `- ${inner}\n`;
+                    break;
+                case 'a': {
+                    const href = child.getAttribute('href') || '';
+                    out += href && inner ? `[${inner}](${href})` : inner;
+                    break;
+                }
+                default:
+                    out += inner;
+            }
+        }
+        return out;
+    }
+
+    function htmlToMarkdownish(html) {
+        const container = document.createElement('div');
+        container.innerHTML = html || '';
+        return serializeNodeAsMarkdown(container).replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    function markdownishToHtml(md) {
+        const lines = (md || '').split('\n');
+        const out = [];
+        let inList = false;
+        let paragraph = [];
+
+        const flushParagraph = () => {
+            if (paragraph.length) {
+                out.push('<p>' + paragraph.join('<br>') + '</p>');
+                paragraph = [];
+            }
+        };
+
+        const inlineFmt = (s) => {
+            let r = escapeHtml(s);
+            r = r.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`);
+            r = r.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            r = r.replace(/__([^_]+)__/g, '<u>$1</u>');
+            r = r.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+            return r;
+        };
+
+        for (const line of lines) {
+            if (/^- /.test(line)) {
+                flushParagraph();
+                if (!inList) { out.push('<ul>'); inList = true; }
+                out.push('<li>' + inlineFmt(line.slice(2)) + '</li>');
+            } else if (line.trim() === '') {
+                if (inList) { out.push('</ul>'); inList = false; }
+                flushParagraph();
+            } else {
+                if (inList) { out.push('</ul>'); inList = false; }
+                paragraph.push(inlineFmt(line));
+            }
+        }
+        if (inList) out.push('</ul>');
+        flushParagraph();
+        return out.join('');
+    }
+
+    function stripMarkdownSyntax(md) {
+        return (md || '')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            .replace(/\*\*/g, '')
+            .replace(/(^|[^*])\*/g, '$1')
+            .replace(/__/g, '')
+            .trim();
+    }
+
+    function contentMatches(replyArea, translatedMarkdown) {
         const current = (replyArea.innerText || replyArea.textContent || '').trim();
-        const target = translated.trim();
+        const target = stripMarkdownSyntax(translatedMarkdown);
+        if (!target) return false;
         if (current === target) return true;
         const head = target.slice(0, Math.min(40, target.length));
         return head.length >= 10 && current.includes(head);
     }
 
-    async function tryCKEditorApi(replyArea, translated) {
-        const editor = findCKEditorInstance(replyArea);
-        if (!editor || !editor.model) return false;
+    async function withSpellcheckSuppressed(replyArea, fn) {
+        const prev = replyArea.getAttribute('spellcheck');
+        replyArea.setAttribute('spellcheck', 'false');
         try {
-            editor.model.change(writer => {
-                const root = editor.model.document.getRoot();
-                writer.remove(writer.createRangeIn(root));
-                const paragraph = writer.createElement('paragraph');
-                writer.append(paragraph, root);
-                writer.insertText(translated, paragraph, 0);
+            return await fn();
+        } finally {
+            // Restore on next frame so the editor doesn't immediately re-run
+            // spellcheck over the just-injected text.
+            requestAnimationFrame(() => {
+                if (prev === null) replyArea.removeAttribute('spellcheck');
+                else replyArea.setAttribute('spellcheck', prev);
             });
+        }
+    }
+
+    async function tryCKEditorApi(replyArea, plainText, html) {
+        const editor = findCKEditorInstance(replyArea);
+        if (!editor) return false;
+        try {
+            if (typeof editor.setData === 'function') {
+                editor.setData(html || '');
+            } else if (editor.model && typeof editor.model.change === 'function') {
+                editor.model.change(writer => {
+                    const root = editor.model.document.getRoot();
+                    writer.remove(writer.createRangeIn(root));
+                    const paragraph = writer.createElement('paragraph');
+                    writer.append(paragraph, root);
+                    writer.insertText(plainText || '', paragraph, 0);
+                });
+            } else {
+                return false;
+            }
             await sleep(80);
-            return contentMatches(replyArea, translated);
+            return contentMatches(replyArea, plainText);
         } catch (err) {
             console.warn('[zt] CKEditor API strategy failed:', err);
             return false;
         }
     }
 
-    async function trySyntheticPaste(replyArea, translated) {
+    async function trySyntheticPaste(replyArea, plainText, html) {
         try {
             replyArea.focus();
             await sleep(30);
@@ -356,8 +550,8 @@
             await sleep(30);
 
             const dt = new DataTransfer();
-            dt.setData('text/plain', translated);
-            dt.setData('text/html', translated.replace(/\n/g, '<br>'));
+            dt.setData('text/plain', stripMarkdownSyntax(plainText));
+            dt.setData('text/html', html);
 
             const pasteEvent = new ClipboardEvent('paste', {
                 clipboardData: dt,
@@ -366,97 +560,39 @@
             });
             replyArea.dispatchEvent(pasteEvent);
             await sleep(150);
-            return contentMatches(replyArea, translated);
+            return contentMatches(replyArea, plainText);
         } catch (err) {
             console.warn('[zt] Synthetic paste strategy failed:', err);
             return false;
         }
     }
 
-    async function tryBeforeInput(replyArea, translated) {
-        try {
-            replyArea.focus();
-            await sleep(30);
-            document.execCommand('selectAll', false, null);
-            await sleep(30);
-
-            const dt = new DataTransfer();
-            dt.setData('text/plain', translated);
-
-            const evt = new InputEvent('beforeinput', {
-                inputType: 'insertReplacementText',
-                data: translated,
-                dataTransfer: dt,
-                bubbles: true,
-                cancelable: true
-            });
-            replyArea.dispatchEvent(evt);
-            await sleep(150);
-            return contentMatches(replyArea, translated);
-        } catch (err) {
-            console.warn('[zt] beforeinput strategy failed:', err);
-            return false;
-        }
-    }
-
-    async function tryClipboardWithExecPaste(replyArea, translated) {
-        let previousClipboard = null;
-        try {
-            try { previousClipboard = await navigator.clipboard.readText(); } catch (_) {}
-            await navigator.clipboard.writeText(translated);
-
-            replyArea.focus();
-            await sleep(30);
-
-            const sel = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(replyArea);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            document.execCommand('selectAll', false, null);
-            await sleep(30);
-
-            document.execCommand('paste');
-            await sleep(200);
-
-            return contentMatches(replyArea, translated);
-        } catch (err) {
-            console.warn('[zt] Clipboard+execPaste strategy failed:', err);
-            return false;
-        } finally {
-            if (previousClipboard !== null) {
-                try { await navigator.clipboard.writeText(previousClipboard); } catch (_) {}
+    async function replaceReplyText(replyArea, plainText, html) {
+        return withSpellcheckSuppressed(replyArea, async () => {
+            const strategies = [
+                { name: 'ckeditor-api', run: tryCKEditorApi },
+                { name: 'synthetic-paste', run: trySyntheticPaste }
+            ];
+            for (const s of strategies) {
+                const ok = await s.run(replyArea, plainText, html);
+                if (ok) {
+                    console.log(`[zt] Reply replaced via strategy: ${s.name}`);
+                    try {
+                        const sel = window.getSelection();
+                        const range = document.createRange();
+                        range.selectNodeContents(replyArea);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    } catch (_) {}
+                    return true;
+                }
+                console.log(`[zt] Strategy ${s.name} did not stick, trying next`);
             }
-        }
-    }
-
-    async function replaceReplyText(replyArea, translated) {
-        const strategies = [
-            { name: 'ckeditor-api', run: tryCKEditorApi },
-            { name: 'synthetic-paste', run: trySyntheticPaste },
-            { name: 'beforeinput', run: tryBeforeInput },
-            { name: 'clipboard-execpaste', run: tryClipboardWithExecPaste }
-        ];
-        for (const s of strategies) {
-            const ok = await s.run(replyArea, translated);
-            if (ok) {
-                console.log(`[zt] Reply replaced via strategy: ${s.name}`);
-                // Move caret to end
-                try {
-                    const sel = window.getSelection();
-                    const range = document.createRange();
-                    range.selectNodeContents(replyArea);
-                    range.collapse(false);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                } catch (_) {}
-                return true;
-            }
-            console.log(`[zt] Strategy ${s.name} did not stick, trying next`);
-        }
-        console.error('[zt] All reply replacement strategies failed');
-        alert('Could not replace reply text — no strategy worked. See console for details.');
-        return false;
+            console.error('[zt] All reply replacement strategies failed');
+            showToast('Could not replace reply text — no strategy worked.', 'error');
+            return false;
+        });
     }
 
     function addReplyTranslateButton() {
@@ -520,8 +656,12 @@
                 return;
             }
 
-            const replyText = (replyArea.innerText || replyArea.textContent || '').trim();
-            if (!replyText) {
+            // Extract formatted reply as a markdown-ish string. Translation
+            // providers preserve the markdown syntax reliably, so the
+            // roundtrip (HTML → markdown → translate → markdown → HTML)
+            // keeps bold/italic/lists/links/line breaks intact.
+            const replyMarkdown = htmlToMarkdownish(replyArea.innerHTML || '');
+            if (!replyMarkdown) {
                 alert('Please write your reply first.');
                 return;
             }
@@ -531,9 +671,10 @@
             translateBtn.innerHTML = '⏳';
             translateBtn.style.cursor = 'wait';
 
-            const translated = await translate(replyText, detectedCustomerLanguage, 'en');
+            const translatedMarkdown = await translate(replyMarkdown, detectedCustomerLanguage, 'en');
+            const translatedHtml = markdownishToHtml(translatedMarkdown);
 
-            const ok = await replaceReplyText(replyArea, translated);
+            const ok = await replaceReplyText(replyArea, translatedMarkdown, translatedHtml);
 
             translateBtn.innerHTML = ok ? '✓' : '⚠️';
             translateBtn.style.cursor = 'pointer';
