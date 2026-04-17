@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.7 (current)
+### v1.0.8 (current)
+- Per-ticket state reset: the detected customer language, badges, translation boxes, and reply button are cleared when the Zendesk ticket ID in the URL changes. Fixes the case where opening an English ticket after a non-English one would offer to translate your reply into the previous ticket's language.
+- Reply button is no longer rendered for English-only tickets — it only appears once a non-English customer message has been detected on the current ticket.
+- Observer/poll lifecycle: the main MutationObserver is now disconnected on disable, and a 1.5s poll backs up the observer for cases where Zendesk's reply toolbar renders without triggering a mutation at the document root. Fixes the v1.0.7 bug where the reply button only appeared after a disable/re-enable cycle and wouldn't disappear on disable.
+
+### v1.0.7
 - LibreTranslate support alongside Google Translate, selectable from the popup with runtime host-permission request.
 - Error toasts for translation/detection failures; `AbortController` timeouts on all translator requests (8s).
 - Reply translation rewritten with a layered CKEditor-aware strategy. `synthetic-paste` is what sticks in current Zendesk.
