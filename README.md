@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.16 (current)
+### v1.0.17 (current)
+- **Bilingual reply output.** Clicking the flag now replaces the reply with: translation, a `<hr>` horizontal line (from `---`), and the original English below. Customer receives both versions in the sent email.
+- **Re-translate from the authoritative English.** When the reply already contains a `---` separator from a previous click, the extension uses everything below the last separator as the English source and only rewrites the translation above. Agents can edit the English portion freely and click the flag again to refresh the translation without losing their edits. If the English portion has been fully deleted, an alert prompts the agent to write their reply first.
+- Serializers updated to round-trip the separator in both directions: `htmlToMarkdownish` turns `<hr>` into a `---` block, `markdownishToHtml` emits `<hr>` for a `---`-only block. The text `---` alone wouldn't auto-convert to `<hr>` on paste in CKEditor — that transform only fires on keyboard input — so the tag is injected directly.
+
+### v1.0.16
 - **Stop the false "no strategy worked" toast** when synthetic-paste actually succeeded. After v1.0.15's serializer change, adjacent paragraphs in the target markdown are separated by `\n` while Chrome's `innerText` always emits `\n\n` between block elements — so the post-injection substring check in `contentMatches` failed on whitespace mismatch even though the reply landed correctly. Normalize whitespace on both sides of the comparison before checking.
 
 ### v1.0.15

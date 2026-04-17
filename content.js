@@ -433,6 +433,12 @@
                 case 'br':
                     out += '\n';
                     break;
+                case 'hr':
+                    // Horizontal rule becomes '---' on its own line in
+                    // markdown. Surround with blank lines so it's a
+                    // distinct block when we split on /\n{2,}/ later.
+                    out += '\n\n---\n\n';
+                    break;
                 case 'p':
                 case 'div':
                     // Single newline per paragraph. In Zendesk's CKEditor,
@@ -517,6 +523,16 @@
                 parts.push('<p><br></p>');  // Zendesk blank-line sentinel.
             }
             firstBlockEmitted = true;
+
+            // A block consisting of only '---' becomes a horizontal rule.
+            // CKEditor preserves <hr> on paste but does not transform the
+            // literal text '---' to an <hr> (that autocorrect only fires
+            // on keyboard input), so we need to emit the tag directly.
+            if (block.trim() === '---') {
+                closeList();
+                parts.push('<hr>');
+                continue;
+            }
 
             const lines = block.split('\n');
             for (const line of lines) {
@@ -797,25 +813,47 @@
                 return;
             }
 
+            // If the reply already has a '---' separator from a previous
+            // translation, the agent is re-translating after editing the
+            // English below the line. Take everything after the last
+            // separator as the authoritative English source — the
+            // translation above gets replaced. Without a separator, the
+            // whole reply is the source.
+            const sepRegex = /(?:^|\n\n)---\s*(?:\n\n|$)/g;
+            let lastSepEnd = -1;
+            let sepMatch;
+            while ((sepMatch = sepRegex.exec(replyMarkdown)) !== null) {
+                lastSepEnd = sepMatch.index + sepMatch[0].length;
+            }
+            const englishSource = (lastSepEnd >= 0
+                ? replyMarkdown.slice(lastSepEnd)
+                : replyMarkdown).trim();
+            if (!englishSource) {
+                alert('Please write your reply in English below the separator.');
+                return;
+            }
+
             console.groupCollapsed('[zt debug] reply translation pipeline');
             console.log('1. reply innerHTML:', replyHtml);
-            console.log('2. reply markdown (going into provider):', JSON.stringify(replyMarkdown));
-            const paragraphCount = replyMarkdown.split(/\n{2,}/).length;
-            console.log(`   paragraph count (split on /\\n{2,}/): ${paragraphCount}`);
+            console.log('2. reply markdown (full):', JSON.stringify(replyMarkdown));
+            console.log('2b. english source:', JSON.stringify(englishSource));
 
             const originalHTML = translateBtn.innerHTML;
             translateBtn.disabled = true;
             translateBtn.innerHTML = '⏳';
             translateBtn.style.cursor = 'wait';
 
-            const translatedMarkdown = await translate(replyMarkdown, detectedCustomerLanguage, 'en');
+            const translatedMarkdown = await translate(englishSource, detectedCustomerLanguage, 'en');
             console.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
-            console.log(`   paragraph count in response: ${translatedMarkdown.split(/\n{2,}/).length}`);
 
-            const translatedHtml = markdownishToHtml(translatedMarkdown);
-            console.log('4. translated HTML (about to inject):', translatedHtml);
+            // Build the combined reply: translation, separator, original
+            // English. Customer receives both versions; agent can re-click
+            // the flag to refresh just the translation portion.
+            const combinedMarkdown = `${translatedMarkdown}\n\n---\n\n${englishSource}`;
+            const combinedHtml = markdownishToHtml(combinedMarkdown);
+            console.log('4. combined HTML (about to inject):', combinedHtml);
 
-            const ok = await replaceReplyText(replyArea, translatedMarkdown, translatedHtml);
+            const ok = await replaceReplyText(replyArea, combinedMarkdown, combinedHtml);
 
             console.log('5. reply innerHTML after inject:', replyArea.innerHTML);
             console.log('5b. reply innerText after inject:', replyArea.innerText);
