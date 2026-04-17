@@ -206,13 +206,19 @@
         }
     }
 
+    // Bump when the translation pipeline changes in a way that would make
+    // previously-cached results look wrong (e.g. paragraph-splitting, HTML
+    // formatting preservation). Old entries with a different prefix become
+    // unreachable and naturally evicted by the LRU trim.
+    const CACHE_VERSION = 'v2';
+
     async function translate(text, targetLang = 'en', sourceLang = 'auto') {
         if (!guardExtensionContext()) return text;
 
         const providerKey = settings.provider === 'libretranslate' ? 'libre' : 'google';
-        const memoryKey = `${providerKey}:${text.slice(0, 100)}_${targetLang}`;
+        const memoryKey = `${CACHE_VERSION}:${providerKey}:${text.slice(0, 100)}_${targetLang}`;
         if (translationMemory[memoryKey]) {
-            console.log('[zt] Using cached translation');
+            console.log('[zt] Using cached translation (key:', memoryKey.slice(0, 60) + '…)');
             return translationMemory[memoryKey];
         }
 
@@ -610,6 +616,31 @@
         });
     }
 
+    // Zendesk keeps multiple open tickets in the same DOM (only one is
+    // visible at a time). Use visibility checks so our button goes into the
+    // toolbar the agent is actually looking at, not an off-screen one.
+    function isElementVisible(el) {
+        if (!el || el.offsetParent === null) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
+    function findVisibleEnhanceButton() {
+        const buttons = document.querySelectorAll('[aria-label="Enhance writing"]');
+        for (const btn of buttons) {
+            if (isElementVisible(btn)) return btn;
+        }
+        return null;
+    }
+
+    function findVisibleComposer() {
+        const composers = document.querySelectorAll('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]');
+        for (const c of composers) {
+            if (isElementVisible(c)) return c;
+        }
+        return null;
+    }
+
     function addReplyTranslateButton() {
         if (!isEnabled) return;
         // Only render the reply translator when this ticket's customer is
@@ -617,13 +648,22 @@
         // appearing on English-only tickets with stale state from a prior
         // ticket.
         if (!detectedCustomerLanguage || detectedCustomerLanguage === 'en') return;
-        if (document.querySelector('.zt-reply-wrapper')) return;
 
-        const enhanceButton = document.querySelector('[aria-label="Enhance writing"]');
+        const enhanceButton = findVisibleEnhanceButton();
         if (!enhanceButton) return;
 
         const toolbar = enhanceButton.closest('[role="toolbar"]');
         if (!toolbar) return;
+
+        // Only skip if THIS visible toolbar already has our wrapper. Stale
+        // wrappers in hidden ticket tabs (from previous switches) shouldn't
+        // prevent us from adding one to the current ticket's toolbar.
+        if (toolbar.querySelector('.zt-reply-wrapper')) {
+            // Rebind the cached reference in case this wrapper came from a
+            // previous scan and the old one got cleaned up.
+            window.ztReplyButton = toolbar.querySelector('.zt-reply-translate-btn');
+            return;
+        }
 
         const buttonWrapper = document.createElement('div');
         buttonWrapper.className = 'zt-reply-wrapper sc-k83b6s-1 jXsvnN';
@@ -665,9 +705,9 @@
                 return;
             }
 
-            const replyArea = document.querySelector('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]');
+            const replyArea = findVisibleComposer();
             if (!replyArea) {
-                alert('Could not find reply area.');
+                alert('Could not find the active reply area.');
                 return;
             }
 
@@ -675,11 +715,18 @@
             // providers preserve the markdown syntax reliably, so the
             // roundtrip (HTML → markdown → translate → markdown → HTML)
             // keeps bold/italic/lists/links/line breaks intact.
-            const replyMarkdown = htmlToMarkdownish(replyArea.innerHTML || '');
+            const replyHtml = replyArea.innerHTML || '';
+            const replyMarkdown = htmlToMarkdownish(replyHtml);
             if (!replyMarkdown) {
                 alert('Please write your reply first.');
                 return;
             }
+
+            console.groupCollapsed('[zt debug] reply translation pipeline');
+            console.log('1. reply innerHTML:', replyHtml);
+            console.log('2. reply markdown (going into provider):', JSON.stringify(replyMarkdown));
+            const paragraphCount = replyMarkdown.split(/\n{2,}/).length;
+            console.log(`   paragraph count (split on /\\n{2,}/): ${paragraphCount}`);
 
             const originalHTML = translateBtn.innerHTML;
             translateBtn.disabled = true;
@@ -687,9 +734,17 @@
             translateBtn.style.cursor = 'wait';
 
             const translatedMarkdown = await translate(replyMarkdown, detectedCustomerLanguage, 'en');
+            console.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
+            console.log(`   paragraph count in response: ${translatedMarkdown.split(/\n{2,}/).length}`);
+
             const translatedHtml = markdownishToHtml(translatedMarkdown);
+            console.log('4. translated HTML (about to inject):', translatedHtml);
 
             const ok = await replaceReplyText(replyArea, translatedMarkdown, translatedHtml);
+
+            console.log('5. reply innerHTML after inject:', replyArea.innerHTML);
+            console.log('5b. reply innerText after inject:', replyArea.innerText);
+            console.groupEnd();
 
             translateBtn.innerHTML = ok ? '✓' : '⚠️';
             translateBtn.style.cursor = 'pointer';

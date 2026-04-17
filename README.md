@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.11 (current)
+### v1.0.12 (current)
+- **Multi-ticket fix.** Zendesk keeps multiple open tickets in the same DOM (only one is visible at a time). v1.0.11 and earlier used `document.querySelector` to find the reply composer and the "Enhance writing" toolbar, which returned the first match in DOM order — often a hidden ticket. The reply flag would then attach to an invisible toolbar and appear missing from the ticket the agent was looking at. Now we scan with visibility checks (`offsetParent`, bounding-rect dimensions) and always target the composer actually on screen. The wrapper-already-exists check is also scoped to the current toolbar so stale wrappers in hidden tabs don't block new buttons.
+- **Cache version bust.** Translation-memory keys now carry a `v2:` prefix. Results cached under the old key format (from v1.0.9–v1.0.11's formatting roundtrip and per-paragraph fanout) become unreachable, so agents retranslating the same template after this update actually hit the new pipeline instead of getting a stale result.
+- **Diagnostic logging on reply translation.** Every flag click logs the reply's innerHTML, the derived markdown, paragraph count in and out, the final HTML, and the post-injection state to the console under `[zt debug] reply translation pipeline`. Helps pinpoint where formatting loss happens (provider response vs. serializer vs. rehydrator). Will be removed once the roundtrip is confirmed solid on real templates.
+
+### v1.0.11
 - Preserve paragraph spacing across the translation request itself. Google's public endpoint (and some LibreTranslate deployments) collapse `\n\n` to `\n` in their response — which means a v1.0.10 reply with greeting / body / sign-off would come back with every line glued together into one paragraph. Now the reply is split on blank lines before translation and each paragraph is translated in parallel, then joined back with `\n\n`. Round-trip latency is the same as one request for a typical email-sized reply because the calls are parallel.
 
 ### v1.0.10
