@@ -458,16 +458,17 @@
     }
 
     function addReplyTranslateButton() {
-        if (document.querySelector('.zt-reply-translate-btn')) return;
-        
+        if (!isEnabled) return;
+        if (document.querySelector('.zt-reply-wrapper')) return;
+
         const enhanceButton = document.querySelector('[aria-label="Enhance writing"]');
         if (!enhanceButton) return;
-        
+
         const toolbar = enhanceButton.closest('[role="toolbar"]');
         if (!toolbar) return;
-        
+
         const buttonWrapper = document.createElement('div');
-        buttonWrapper.className = 'sc-k83b6s-1 jXsvnN';
+        buttonWrapper.className = 'zt-reply-wrapper sc-k83b6s-1 jXsvnN';
         
         const translateBtn = document.createElement('button');
         translateBtn.className = 'zt-reply-translate-btn';
@@ -567,34 +568,50 @@
     // ============================================
     // INITIALIZATION
     // ============================================
-    
+
+    let mainObserver = null;
+    let pollTimer = null;
+
+    function scanAndAttach() {
+        if (!isEnabled) return;
+        const messages = document.querySelectorAll('[data-test-id="omni-log-message-content"]');
+        messages.forEach(processCustomerMessage);
+        addReplyTranslateButton();
+    }
+
     function init() {
+        // Idempotent: tear down any prior observer/poll so repeated toggles
+        // don't stack handlers.
+        teardownObservers();
+
         console.log('Zendesk Auto Translator initializing...');
-        
-        const observer = new MutationObserver(() => {
-            const messages = document.querySelectorAll('[data-test-id="omni-log-message-content"]');
-            messages.forEach(processCustomerMessage);
-            
-            addReplyTranslateButton();
-        });
-        
-        observer.observe(document.body, {
+
+        mainObserver = new MutationObserver(scanAndAttach);
+        mainObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
-        
-        setTimeout(() => {
-            const messages = document.querySelectorAll('[data-test-id="omni-log-message-content"]');
-            messages.forEach(processCustomerMessage);
-            addReplyTranslateButton();
-        }, 2000);
-        
+
+        // Polling backup: Zendesk's React re-renders the reply toolbar in ways
+        // that don't always bubble a mutation our observer catches, and the
+        // initial reply toolbar can render before our observer sees it. 1.5s
+        // poll keeps the button sticky without noticeable overhead.
+        pollTimer = setInterval(scanAndAttach, 1500);
+
+        // Immediate first scan so we don't wait for the first mutation.
+        setTimeout(scanAndAttach, 500);
+
         console.log('Zendesk Auto Translator ready!');
     }
-    
+
+    function teardownObservers() {
+        if (mainObserver) { mainObserver.disconnect(); mainObserver = null; }
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
     function cleanup() {
-        document.querySelectorAll('.zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-translate-btn').forEach(el => el.remove());
-        // Also unmark processed messages so a re-enable can re-render their UI.
+        teardownObservers();
+        document.querySelectorAll('.zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
         document.querySelectorAll('[data-zt-processed]').forEach(el => {
             delete el.dataset.ztProcessed;
         });
