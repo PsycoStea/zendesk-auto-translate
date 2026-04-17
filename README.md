@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.13 (current)
+### v1.0.14 (current)
+- **Authoritative visible-ticket language resolution.** v1.0.13 used a global `detectedCustomerLanguage` updated only from visible messages, but that was still vulnerable to async races in `processCustomerMessage` (whichever message's detection promise resolved last won the global) and to `isElementVisible` returning the wrong answer for hiding techniques other than `display:none`. `addReplyTranslateButton` now derives the language synchronously from the first visible customer message that has a cached `data-zt-lang`, and reconciles the global against that before creating or updating the flag. If a visible message's language disagrees with the global, the visible message wins.
+- **Stronger visibility check.** Switched to `Element.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })` when available (Chrome 105+). It handles `display:none`, `visibility:hidden`, `content-visibility:hidden`, and `opacity:0` on any ancestor — the older `offsetParent` fallback only caught `display:none` reliably.
+- **Clear detected language on disable.** `cleanup()` now resets `detectedCustomerLanguage` so a toggle off/on cycle can't reuse a language from a previously-visited ticket.
+
+### v1.0.13
 - **Fix language bleed across open tickets.** v1.0.12's debug logs showed the reply formatting pipeline was correct end-to-end, but agents reported the reply button showing the wrong language after switching tickets — and translating into that wrong language. Root cause: `detectedCustomerLanguage` was a single global, and `processCustomerMessage` ran on every message in the DOM, including hidden ones from other open tickets. Whichever finished detection last set the global. Now the global is only written when the message being processed is visible; hidden tickets' messages still get their own per-message badges rendered but no longer leak their language into the visible ticket's reply button.
 - **Cache detected language on each message element.** Switching tickets previously re-ran detection against the provider for every previously-seen message (because `data-zt-processed` gets cleared on ticket change to force UI rebuild). Detection result is now stored in `data-zt-lang` on the message, which survives the reset, so a tab switch back to a ticket uses zero extra API calls for messages already seen.
 

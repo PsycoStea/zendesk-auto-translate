@@ -630,10 +630,37 @@
     // Zendesk keeps multiple open tickets in the same DOM (only one is
     // visible at a time). Use visibility checks so our button goes into the
     // toolbar the agent is actually looking at, not an off-screen one.
+    //
+    // Prefer Element.checkVisibility() (Chrome 105+) — it correctly handles
+    // display:none, visibility:hidden, content-visibility:hidden, opacity:0
+    // on any ancestor. Fall back to offsetParent + bounding rect which only
+    // catches display:none reliably.
     function isElementVisible(el) {
-        if (!el || el.offsetParent === null) return false;
+        if (!el || !el.isConnected) return false;
+        if (typeof el.checkVisibility === 'function') {
+            return el.checkVisibility({
+                contentVisibilityAuto: true,
+                opacityProperty: true,
+                visibilityProperty: true
+            });
+        }
+        if (el.offsetParent === null) return false;
         const rect = el.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
+    }
+
+    // Synchronously pick the language of whichever customer message the
+    // agent is currently looking at, based on cached detections stored on
+    // message elements in data-zt-lang. This is authoritative over the
+    // detectedCustomerLanguage global, which can be stale from previous
+    // ticket views or from async races during processCustomerMessage.
+    function languageOfVisibleTicket() {
+        const msgs = document.querySelectorAll('[data-test-id="omni-log-message-content"][data-zt-lang]');
+        for (const m of msgs) {
+            const l = m.dataset.ztLang;
+            if (l && l !== 'en' && l !== 'unknown' && isElementVisible(m)) return l;
+        }
+        return null;
     }
 
     function findVisibleEnhanceButton() {
@@ -654,10 +681,22 @@
 
     function addReplyTranslateButton() {
         if (!isEnabled) return;
-        // Only render the reply translator when this ticket's customer is
-        // actually writing in a non-English language. Prevents the button
-        // appearing on English-only tickets with stale state from a prior
-        // ticket.
+
+        // Ground truth for "what language should this reply button translate
+        // to" is whatever the currently-visible customer message is in. The
+        // global is useful as a fast path but can be stale after a ticket
+        // switch — always reconcile with the visible-ticket language first.
+        const visibleLang = languageOfVisibleTicket();
+        if (visibleLang) {
+            if (visibleLang !== detectedCustomerLanguage) {
+                detectedCustomerLanguage = visibleLang;
+                updateReplyButton();
+            }
+        } else if (!detectedCustomerLanguage) {
+            // No language known yet and none visible — nothing to do this tick.
+            return;
+        }
+
         if (!detectedCustomerLanguage || detectedCustomerLanguage === 'en') return;
 
         const enhanceButton = findVisibleEnhanceButton();
@@ -868,6 +907,10 @@
         document.querySelectorAll('[data-zt-processed]').forEach(el => {
             delete el.dataset.ztProcessed;
         });
+        // Clear stale language state so a toggle off/on can't reuse a
+        // language from a different ticket view. data-zt-lang on individual
+        // messages is preserved — it's per-message detection, not per-ticket.
+        detectedCustomerLanguage = null;
         window.ztReplyButton = null;
     }
     
