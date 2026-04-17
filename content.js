@@ -255,8 +255,10 @@
         if (langCode === 'en') return;
         
         detectedCustomerLanguage = langCode;
-        
-        // Update reply button if it exists
+
+        // Try to add the reply button now that we know the language, and
+        // update its content if it already exists.
+        addReplyTranslateButton();
         updateReplyButton();
         
         const translationContainer = document.createElement('div');
@@ -459,6 +461,11 @@
 
     function addReplyTranslateButton() {
         if (!isEnabled) return;
+        // Only render the reply translator when this ticket's customer is
+        // actually writing in a non-English language. Prevents the button
+        // appearing on English-only tickets with stale state from a prior
+        // ticket.
+        if (!detectedCustomerLanguage || detectedCustomerLanguage === 'en') return;
         if (document.querySelector('.zt-reply-wrapper')) return;
 
         const enhanceButton = document.querySelector('[aria-label="Enhance writing"]');
@@ -571,9 +578,33 @@
 
     let mainObserver = null;
     let pollTimer = null;
+    let currentTicketId = null;
+
+    function getTicketIdFromUrl() {
+        const m = location.pathname.match(/\/agent\/tickets\/(\d+)/);
+        return m ? m[1] : null;
+    }
+
+    function resetTicketState() {
+        detectedCustomerLanguage = null;
+        document.querySelectorAll('.zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
+        document.querySelectorAll('[data-zt-processed]').forEach(el => {
+            delete el.dataset.ztProcessed;
+        });
+        window.ztReplyButton = null;
+    }
+
+    function checkTicketChange() {
+        const t = getTicketIdFromUrl();
+        if (t !== currentTicketId) {
+            currentTicketId = t;
+            resetTicketState();
+        }
+    }
 
     function scanAndAttach() {
         if (!isEnabled) return;
+        checkTicketChange();
         const messages = document.querySelectorAll('[data-test-id="omni-log-message-content"]');
         messages.forEach(processCustomerMessage);
         addReplyTranslateButton();
