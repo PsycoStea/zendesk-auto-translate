@@ -544,8 +544,15 @@
     }
 
     function contentMatches(replyArea, translatedMarkdown) {
-        const current = (replyArea.innerText || replyArea.textContent || '').trim();
-        const target = stripMarkdownSyntax(translatedMarkdown);
+        // Normalize whitespace on both sides before comparing. The target
+        // markdown uses '\n' for adjacent paragraphs and '\n\n' for
+        // blank-line separators, but Chrome's innerText emits '\n\n'
+        // between every pair of block elements — including adjacent <p>s —
+        // so a literal substring check would always fail at the first
+        // paragraph boundary even when the text landed correctly.
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+        const current = norm(replyArea.innerText || replyArea.textContent);
+        const target = norm(stripMarkdownSyntax(translatedMarkdown));
         if (!target) return false;
         if (current === target) return true;
         const head = target.slice(0, Math.min(40, target.length));

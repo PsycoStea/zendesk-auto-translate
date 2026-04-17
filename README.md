@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.15 (current)
+### v1.0.16 (current)
+- **Stop the false "no strategy worked" toast** when synthetic-paste actually succeeded. After v1.0.15's serializer change, adjacent paragraphs in the target markdown are separated by `\n` while Chrome's `innerText` always emits `\n\n` between block elements — so the post-injection substring check in `contentMatches` failed on whitespace mismatch even though the reply landed correctly. Normalize whitespace on both sides of the comparison before checking.
+
+### v1.0.15
 - **Preserve Zendesk's blank-line sentinel paragraphs.** In Zendesk's CKEditor, adjacent `<p>` tags render as consecutive lines with no visible spacing — a visible blank line only appears when there's an empty `<p><br></p>` paragraph between them. The v1.0.9–v1.0.14 serializer emitted one `\n\n` per `<p>`, which meant `<p>A</p><p>B</p>` (adjacent, no blank) and `<p>A</p><p><br></p><p>B</p>` (blank-line separator) collapsed to the same markdown (`A\n\nB`). Rehydration couldn't tell them apart and produced only adjacent `<p>` tags — so translated replies lost every agent-inserted blank line, even though the diagnostic logs showed the text itself was correct.
 - Now the serializer emits `\n` per paragraph (so adjacent `<p>` tags become `A\nB`) while empty `<p><br></p>` sentinels naturally produce `\n\n` (one from the `<br>`, one from the wrapping `<p>`, normalized). Rehydration splits the markdown on blank lines into "blocks", renders each block's lines as consecutive `<p>` tags, and inserts a `<p><br></p>` sentinel between blocks to match Zendesk's convention. Greeting / body / signature spacing now survives the roundtrip.
 - Cache version bumped to `v3:` since the markdown format produced by the serializer changed — any old cache entries are unreachable.
