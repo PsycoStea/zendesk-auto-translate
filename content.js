@@ -195,6 +195,163 @@
         messageElement.parentNode.insertBefore(translationContainer, messageElement.nextSibling);
     }
     
+    // ============================================
+    // REPLY REPLACEMENT (CKEditor 5 aware)
+    // ============================================
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    function findCKEditorInstance(startNode) {
+        let node = startNode;
+        while (node && node !== document.body) {
+            if (node.ckeditorInstance) return node.ckeditorInstance;
+            node = node.parentElement;
+        }
+        const candidates = document.querySelectorAll('.ck-editor, .ck-editor__main, .ck.ck-editor, [class*="ck-editor"]');
+        for (const c of candidates) {
+            if (c.ckeditorInstance) return c.ckeditorInstance;
+        }
+        return null;
+    }
+
+    function contentMatches(replyArea, translated) {
+        const current = (replyArea.innerText || replyArea.textContent || '').trim();
+        const target = translated.trim();
+        if (current === target) return true;
+        const head = target.slice(0, Math.min(40, target.length));
+        return head.length >= 10 && current.includes(head);
+    }
+
+    async function tryCKEditorApi(replyArea, translated) {
+        const editor = findCKEditorInstance(replyArea);
+        if (!editor || !editor.model) return false;
+        try {
+            editor.model.change(writer => {
+                const root = editor.model.document.getRoot();
+                writer.remove(writer.createRangeIn(root));
+                const paragraph = writer.createElement('paragraph');
+                writer.append(paragraph, root);
+                writer.insertText(translated, paragraph, 0);
+            });
+            await sleep(80);
+            return contentMatches(replyArea, translated);
+        } catch (err) {
+            console.warn('[zt] CKEditor API strategy failed:', err);
+            return false;
+        }
+    }
+
+    async function trySyntheticPaste(replyArea, translated) {
+        try {
+            replyArea.focus();
+            await sleep(30);
+            document.execCommand('selectAll', false, null);
+            await sleep(30);
+
+            const dt = new DataTransfer();
+            dt.setData('text/plain', translated);
+            dt.setData('text/html', translated.replace(/\n/g, '<br>'));
+
+            const pasteEvent = new ClipboardEvent('paste', {
+                clipboardData: dt,
+                bubbles: true,
+                cancelable: true
+            });
+            replyArea.dispatchEvent(pasteEvent);
+            await sleep(150);
+            return contentMatches(replyArea, translated);
+        } catch (err) {
+            console.warn('[zt] Synthetic paste strategy failed:', err);
+            return false;
+        }
+    }
+
+    async function tryBeforeInput(replyArea, translated) {
+        try {
+            replyArea.focus();
+            await sleep(30);
+            document.execCommand('selectAll', false, null);
+            await sleep(30);
+
+            const dt = new DataTransfer();
+            dt.setData('text/plain', translated);
+
+            const evt = new InputEvent('beforeinput', {
+                inputType: 'insertReplacementText',
+                data: translated,
+                dataTransfer: dt,
+                bubbles: true,
+                cancelable: true
+            });
+            replyArea.dispatchEvent(evt);
+            await sleep(150);
+            return contentMatches(replyArea, translated);
+        } catch (err) {
+            console.warn('[zt] beforeinput strategy failed:', err);
+            return false;
+        }
+    }
+
+    async function tryClipboardWithExecPaste(replyArea, translated) {
+        let previousClipboard = null;
+        try {
+            try { previousClipboard = await navigator.clipboard.readText(); } catch (_) {}
+            await navigator.clipboard.writeText(translated);
+
+            replyArea.focus();
+            await sleep(30);
+
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(replyArea);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('selectAll', false, null);
+            await sleep(30);
+
+            document.execCommand('paste');
+            await sleep(200);
+
+            return contentMatches(replyArea, translated);
+        } catch (err) {
+            console.warn('[zt] Clipboard+execPaste strategy failed:', err);
+            return false;
+        } finally {
+            if (previousClipboard !== null) {
+                try { await navigator.clipboard.writeText(previousClipboard); } catch (_) {}
+            }
+        }
+    }
+
+    async function replaceReplyText(replyArea, translated) {
+        const strategies = [
+            { name: 'ckeditor-api', run: tryCKEditorApi },
+            { name: 'synthetic-paste', run: trySyntheticPaste },
+            { name: 'beforeinput', run: tryBeforeInput },
+            { name: 'clipboard-execpaste', run: tryClipboardWithExecPaste }
+        ];
+        for (const s of strategies) {
+            const ok = await s.run(replyArea, translated);
+            if (ok) {
+                console.log(`[zt] Reply replaced via strategy: ${s.name}`);
+                // Move caret to end
+                try {
+                    const sel = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(replyArea);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                } catch (_) {}
+                return true;
+            }
+            console.log(`[zt] Strategy ${s.name} did not stick, trying next`);
+        }
+        console.error('[zt] All reply replacement strategies failed');
+        alert('Could not replace reply text — no strategy worked. See console for details.');
+        return false;
+    }
+
     function addReplyTranslateButton() {
         if (document.querySelector('.zt-reply-translate-btn')) return;
         
@@ -238,122 +395,37 @@
         
         translateBtn.addEventListener('click', async (e) => {
             e.preventDefault();
-            
+
             if (!detectedCustomerLanguage) {
                 alert('No customer language detected. Please translate a customer message first.');
                 return;
             }
-            
+
             const replyArea = document.querySelector('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]');
             if (!replyArea) {
                 alert('Could not find reply area.');
                 return;
             }
-            
+
             const replyText = (replyArea.innerText || replyArea.textContent || '').trim();
             if (!replyText) {
                 alert('Please write your reply first.');
                 return;
             }
-            
+
             const originalHTML = translateBtn.innerHTML;
             translateBtn.disabled = true;
             translateBtn.innerHTML = '⏳';
             translateBtn.style.cursor = 'wait';
-            
+
             const translated = await translateWithGoogle(replyText, detectedCustomerLanguage, 'en');
-            
-            // CLIPBOARD METHOD: Copy translation to clipboard and paste it
-            // This is the most native approach - CKEditor can't revert user paste events
-            
-            try {
-                // Step 1: Copy translated text to clipboard
-                await navigator.clipboard.writeText(translated);
-                console.log('Copied translation to clipboard');
-                
-                // Step 2: Focus and select ALL text FIRST (critical order!)
-                replyArea.focus();
-                await new Promise(resolve => setTimeout(resolve, 50)); // Wait for focus
-                
-                // Select all content using multiple methods to ensure it works
-                const sel = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(replyArea);
-                sel.removeAllRanges();
-                sel.addRange(range);
-                
-                // Also use execCommand as backup
-                document.execCommand('selectAll', false, null);
-                
-                console.log('Selected all text');
-                
-                // Wait a moment for selection to register
-                await new Promise(resolve => setTimeout(resolve, 50));
-                
-                // Step 3: Now paste (this should replace the selected text)
-                const pasteSuccess = document.execCommand('paste');
-                
-                if (pasteSuccess) {
-                    console.log('Pasted via execCommand (should replace selected text)');
-                } else {
-                    // Fallback: Manual delete + insert
-                    console.log('execCommand paste failed, using manual method');
-                    
-                    // Delete the selected content
-                    document.execCommand('delete', false, null);
-                    
-                    // Wait for delete to process
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                    
-                    // Insert the translated text
-                    document.execCommand('insertText', false, translated);
-                    
-                    console.log('Manually deleted and inserted text');
-                }
-                
-                // Step 4: Wait for paste to complete
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Step 5: Move cursor to end
-                const finalRange = document.createRange();
-                const finalSel = window.getSelection();
-                if (replyArea.childNodes.length > 0) {
-                    finalRange.selectNodeContents(replyArea);
-                    finalRange.collapse(false); // Collapse to end
-                    finalSel.removeAllRanges();
-                    finalSel.addRange(finalRange);
-                }
-                
-                console.log('Translation complete via clipboard');
-                
-            } catch (error) {
-                console.error('Clipboard method failed:', error);
-                
-                // Ultimate fallback: Direct text insertion with aggressive timing
-                replyArea.focus();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Clear and type slowly
-                document.execCommand('selectAll');
-                document.execCommand('delete');
-                
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Type in small chunks with delays
-                const chunkSize = 50;
-                for (let i = 0; i < translated.length; i += chunkSize) {
-                    const chunk = translated.substring(i, i + chunkSize);
-                    document.execCommand('insertText', false, chunk);
-                    await new Promise(resolve => setTimeout(resolve, 30));
-                }
-                
-                console.log('Translation complete via slow typing fallback');
-            }
-            
-            translateBtn.innerHTML = '✓';
+
+            const ok = await replaceReplyText(replyArea, translated);
+
+            translateBtn.innerHTML = ok ? '✓' : '⚠️';
             translateBtn.style.cursor = 'pointer';
             translateBtn.disabled = false;
-            
+
             setTimeout(() => {
                 translateBtn.innerHTML = originalHTML;
             }, 2000);
@@ -416,8 +488,12 @@
     }
     
     function cleanup() {
-        // Remove all translation UI elements
         document.querySelectorAll('.zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-translate-btn').forEach(el => el.remove());
+        // Also unmark processed messages so a re-enable can re-render their UI.
+        document.querySelectorAll('[data-zt-processed]').forEach(el => {
+            delete el.dataset.ztProcessed;
+        });
+        window.ztReplyButton = null;
     }
     
 })();
