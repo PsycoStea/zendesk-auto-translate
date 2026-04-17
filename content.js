@@ -210,7 +210,7 @@
     // previously-cached results look wrong (e.g. paragraph-splitting, HTML
     // formatting preservation). Old entries with a different prefix become
     // unreachable and naturally evicted by the LRU trim.
-    const CACHE_VERSION = 'v2';
+    const CACHE_VERSION = 'v3';
 
     async function translate(text, targetLang = 'en', sourceLang = 'auto') {
         if (!guardExtensionContext()) return text;
@@ -435,10 +435,17 @@
                     break;
                 case 'p':
                 case 'div':
-                    // Paragraphs end with a blank line so the markdown
-                    // roundtrip rehydrates separate <p> tags rather than
-                    // collapsing them into a single paragraph with <br>.
-                    out += inner + '\n\n';
+                    // Single newline per paragraph. In Zendesk's CKEditor,
+                    // adjacent <p> tags render as consecutive lines without
+                    // a visible blank line — only an empty <p><br></p>
+                    // sentinel produces a visible blank. Serializing as one
+                    // '\n' per paragraph means:
+                    //   <p>A</p><p>B</p>       → "A\nB"   (adjacent)
+                    //   <p>A</p><p><br></p><p>B</p> → "A\n\n\nB" → "A\n\nB" (blank)
+                    // after normalization of \n{3,} to \n\n. The distinction
+                    // is carried through the translator and rehydrated with
+                    // sentinels in markdownishToHtml.
+                    out += inner + '\n';
                     break;
                 case 'strong':
                 case 'b':
@@ -477,16 +484,20 @@
     }
 
     function markdownishToHtml(md) {
-        const lines = (md || '').split('\n');
-        const out = [];
+        // Split on blank lines into "blocks". Each block is a group of
+        // consecutive lines with no blank line between them (i.e. what the
+        // agent typed as a single continuous thought — greeting, body, or
+        // sign-off). Between blocks, insert a <p><br></p> sentinel so
+        // Zendesk's CKEditor renders a visible blank line. Within a block,
+        // each line becomes its own <p> (Zendesk's convention for a single
+        // Enter press).
+        const blocks = (md || '').split(/\n{2,}/);
+        const parts = [];
         let inList = false;
-        let paragraph = [];
+        let firstBlockEmitted = false;
 
-        const flushParagraph = () => {
-            if (paragraph.length) {
-                out.push('<p>' + paragraph.join('<br>') + '</p>');
-                paragraph = [];
-            }
+        const closeList = () => {
+            if (inList) { parts.push('</ul>'); inList = false; }
         };
 
         const inlineFmt = (s) => {
@@ -498,22 +509,29 @@
             return r;
         };
 
-        for (const line of lines) {
-            if (/^- /.test(line)) {
-                flushParagraph();
-                if (!inList) { out.push('<ul>'); inList = true; }
-                out.push('<li>' + inlineFmt(line.slice(2)) + '</li>');
-            } else if (line.trim() === '') {
-                if (inList) { out.push('</ul>'); inList = false; }
-                flushParagraph();
-            } else {
-                if (inList) { out.push('</ul>'); inList = false; }
-                paragraph.push(inlineFmt(line));
+        for (const block of blocks) {
+            if (!block.trim()) continue;
+
+            if (firstBlockEmitted) {
+                closeList();
+                parts.push('<p><br></p>');  // Zendesk blank-line sentinel.
+            }
+            firstBlockEmitted = true;
+
+            const lines = block.split('\n');
+            for (const line of lines) {
+                if (/^- /.test(line)) {
+                    if (!inList) { parts.push('<ul>'); inList = true; }
+                    parts.push('<li>' + inlineFmt(line.slice(2)) + '</li>');
+                } else if (line.trim()) {
+                    closeList();
+                    parts.push('<p>' + inlineFmt(line) + '</p>');
+                }
             }
         }
-        if (inList) out.push('</ul>');
-        flushParagraph();
-        return out.join('');
+
+        closeList();
+        return parts.join('');
     }
 
     function stripMarkdownSyntax(md) {

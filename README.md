@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.14 (current)
+### v1.0.15 (current)
+- **Preserve Zendesk's blank-line sentinel paragraphs.** In Zendesk's CKEditor, adjacent `<p>` tags render as consecutive lines with no visible spacing — a visible blank line only appears when there's an empty `<p><br></p>` paragraph between them. The v1.0.9–v1.0.14 serializer emitted one `\n\n` per `<p>`, which meant `<p>A</p><p>B</p>` (adjacent, no blank) and `<p>A</p><p><br></p><p>B</p>` (blank-line separator) collapsed to the same markdown (`A\n\nB`). Rehydration couldn't tell them apart and produced only adjacent `<p>` tags — so translated replies lost every agent-inserted blank line, even though the diagnostic logs showed the text itself was correct.
+- Now the serializer emits `\n` per paragraph (so adjacent `<p>` tags become `A\nB`) while empty `<p><br></p>` sentinels naturally produce `\n\n` (one from the `<br>`, one from the wrapping `<p>`, normalized). Rehydration splits the markdown on blank lines into "blocks", renders each block's lines as consecutive `<p>` tags, and inserts a `<p><br></p>` sentinel between blocks to match Zendesk's convention. Greeting / body / signature spacing now survives the roundtrip.
+- Cache version bumped to `v3:` since the markdown format produced by the serializer changed — any old cache entries are unreachable.
+
+### v1.0.14
 - **Authoritative visible-ticket language resolution.** v1.0.13 used a global `detectedCustomerLanguage` updated only from visible messages, but that was still vulnerable to async races in `processCustomerMessage` (whichever message's detection promise resolved last won the global) and to `isElementVisible` returning the wrong answer for hiding techniques other than `display:none`. `addReplyTranslateButton` now derives the language synchronously from the first visible customer message that has a cached `data-zt-lang`, and reconciles the global against that before creating or updating the flag. If a visible message's language disagrees with the global, the visible message wins.
 - **Stronger visibility check.** Switched to `Element.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })` when available (Chrome 105+). It handles `display:none`, `visibility:hidden`, `content-visibility:hidden`, and `opacity:0` on any ancestor — the older `offsetParent` fallback only caught `display:none` reliably.
 - **Clear detected language on disable.** `cleanup()` now resets `detectedCustomerLanguage` so a toggle off/on cycle can't reuse a language from a previously-visited ticket.
