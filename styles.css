@@ -1,55 +1,89 @@
 /* Zendesk Auto Translator - Styles */
 
+/*
+ * Badge (info) and button (action) share the same pill shape, font stack,
+ * font-size, weight and letter-spacing so they read as one visual family —
+ * the dark slate fill on the badge vs. the blue accent on the button
+ * creates the hierarchy (this-is-information / this-is-what-you-click).
+ *
+ * The button's hover/active transitions animate transform and box-shadow
+ * only; both are GPU-composited by Chrome and cost nothing while idle.
+ */
+
 .zt-translate-badge {
     display: inline-block;
-    background: #1f73b7;
-    color: white;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 11px;
+    background: #2f3941;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
     font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
     margin: 5px 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .zt-translate-btn {
     display: inline-block;
     background: #1f73b7;
-    color: white;
+    color: #ffffff;
     border: none;
-    padding: 6px 12px;
-    border-radius: 4px;
+    padding: 6px 16px;
+    border-radius: 9999px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
     cursor: pointer;
     margin: 8px 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    transition: background 0.2s;
+    box-shadow: 0 1px 3px rgba(31, 115, 183, 0.28);
+    transition: background-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
 }
 
 .zt-translate-btn:hover {
-    background: #1557a0;
+    background: #1a5f96;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(31, 115, 183, 0.32);
+}
+
+.zt-translate-btn:active {
+    background: #144b78;
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(31, 115, 183, 0.2);
+    transition-duration: 0.06s;
 }
 
 .zt-translate-btn:disabled {
-    background: #ccc;
+    background: #9ca3af;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    opacity: 0.85;
 }
 
 .zt-translation-result {
-    background: #f0f8ff;
-    border-left: 3px solid #1f73b7;
-    padding: 12px;
+    background: #f9fafb;
+    border-left: 3px solid #2f3941;
+    padding: 12px 14px;
     margin: 10px 0;
-    border-radius: 4px;
+    border-radius: 6px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #2f3941;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .zt-translation-label {
-    font-size: 11px;
-    color: #666;
-    font-weight: 600;
-    margin-bottom: 5px;
+    font-size: 10px;
+    color: #6b7280;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
 }
 
 .zt-toast {

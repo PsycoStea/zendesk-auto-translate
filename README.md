@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.17 (current)
+### v1.0.18 (current)
+- **Modernized badge and button.** The customer-message language tag (e.g. `🇩🇰 Danish`) now uses a dark slate fill; the translate button uses Zendesk blue as an accent. Both share the same pill shape, font size, weight, and letter-spacing so they read as one visual family, with the dark/accent contrast carrying the info/action hierarchy. Button text is simplified to just "Translate" (no emoji, no "to English" — we're always translating to English on this side).
+- **Hover + click feedback.** Button hover darkens the fill, lifts 1px, and deepens the shadow; active state presses back down with a tighter shadow. Animations are on `transform` and `box-shadow` only so they're GPU-composited and cost nothing while idle.
+- **Translation result box** cleaned up to match — subtle gray background, slate accent border, uppercase-spaced label.
+
+### v1.0.17
 - **Bilingual reply output.** Clicking the flag now replaces the reply with: translation, a `<hr>` horizontal line (from `---`), and the original English below. Customer receives both versions in the sent email.
 - **Re-translate from the authoritative English.** When the reply already contains a `---` separator from a previous click, the extension uses everything below the last separator as the English source and only rewrites the translation above. Agents can edit the English portion freely and click the flag again to refresh the translation without losing their edits. If the English portion has been fully deleted, an alert prompts the agent to write their reply first.
 - Serializers updated to round-trip the separator in both directions: `htmlToMarkdownish` turns `<hr>` into a `---` block, `markdownishToHtml` emits `<hr>` for a `---`-only block. The text `---` alone wouldn't auto-convert to `<hr>` on paste in CKEditor — that transform only fires on keyboard input — so the tag is injected directly.

@@ -335,11 +335,11 @@
         
         const translateBtn = document.createElement('button');
         translateBtn.className = 'zt-translate-btn';
-        translateBtn.textContent = '📝 Translate to English';
-        
+        translateBtn.textContent = 'Translate';
+
         translateBtn.addEventListener('click', async () => {
             translateBtn.disabled = true;
-            translateBtn.textContent = '⏳ Translating...';
+            translateBtn.textContent = 'Translating…';
             
             const translated = await translate(textContent, 'en', langCode);
             
@@ -358,7 +358,7 @@
             `;
             
             translateBtn.after(resultDiv);
-            translateBtn.textContent = '✓ Translated';
+            translateBtn.textContent = 'Translated';
         });
         
         translationContainer.appendChild(translateBtn);
