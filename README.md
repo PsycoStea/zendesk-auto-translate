@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.10 (current)
+### v1.0.11 (current)
+- Preserve paragraph spacing across the translation request itself. Google's public endpoint (and some LibreTranslate deployments) collapse `\n\n` to `\n` in their response — which means a v1.0.10 reply with greeting / body / sign-off would come back with every line glued together into one paragraph. Now the reply is split on blank lines before translation and each paragraph is translated in parallel, then joined back with `\n\n`. Round-trip latency is the same as one request for a typical email-sized reply because the calls are parallel.
+
+### v1.0.10
 - Fix paragraph spacing in the HTML→markdown→HTML roundtrip. v1.0.9 emitted a single `\n` per `<p>`, so separate paragraphs collapsed into one paragraph with soft `<br>` breaks. Now emits `\n\n`, so a reply like `Hi\n\nBody\n\nRegards` round-trips to three distinct paragraphs and keeps the blank-line spacing agents use between greeting / body / signature.
 
 ### v1.0.9

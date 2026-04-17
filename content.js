@@ -217,9 +217,21 @@
         }
 
         try {
-            const out = settings.provider === 'libretranslate'
-                ? await libreTranslate(text, targetLang, sourceLang)
-                : await googleTranslate(text, targetLang, sourceLang);
+            const backend = settings.provider === 'libretranslate' ? libreTranslate : googleTranslate;
+
+            // Translate each blank-line-separated paragraph independently.
+            // Google's public endpoint (and some LibreTranslate configs)
+            // collapse \n\n to \n in the response, which destroys the
+            // greeting / body / sign-off spacing agents use. Splitting here
+            // preserves paragraph structure; single \n inside a paragraph is
+            // preserved by the providers.
+            const paragraphs = text.split(/\n{2,}/);
+            const translatedParagraphs = await Promise.all(
+                paragraphs.map(p => p.trim()
+                    ? backend(p, targetLang, sourceLang)
+                    : Promise.resolve(''))
+            );
+            const out = translatedParagraphs.join('\n\n');
 
             if (out) {
                 const keys = Object.keys(translationMemory);
