@@ -303,6 +303,12 @@
         const textContent = (messageBody.innerText || messageBody.textContent).trim();
         if (!textContent || textContent.length < 10) return;
 
+        // Serialize the message body to markdown so adjacent lines vs
+        // blank-line-separated paragraphs are preserved through the
+        // translation. textContent still drives language detection (cheap,
+        // and the first 500 chars are all that matter for that).
+        const sourceMarkdown = htmlToMarkdownish(messageBody.innerHTML || '') || textContent;
+
         // Cache the detected language on the element itself so ticket
         // switches (which clear data-zt-processed to force UI re-render)
         // don't burn a fresh API call for every previously-seen message.
@@ -345,21 +351,20 @@
             translateBtn.disabled = true;
             translateBtn.textContent = 'Translating…';
 
-            const translated = await translate(textContent, 'en', langCode);
+            // Translate the markdown-ish source (not the flat textContent)
+            // and rehydrate with the same serializer used for reply output,
+            // so adjacent lines stay adjacent and blank-line separators
+            // survive. The old split/join('<br><br>') unconditionally put
+            // a blank line between every line, producing the over-spaced
+            // output agents reported.
+            const translatedMarkdown = await translate(sourceMarkdown, 'en', langCode);
+            const translatedHtml = markdownishToHtml(translatedMarkdown);
 
             const resultDiv = document.createElement('div');
             resultDiv.className = 'zt-translation-result';
-
-            const formattedTranslation = translated
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0)
-                .join('<br><br>');
-
-            resultDiv.innerHTML = `
-                <div class="zt-translation-label">ENGLISH TRANSLATION:</div>
-                <div style="white-space: pre-wrap;">${formattedTranslation}</div>
-            `;
+            resultDiv.innerHTML =
+                '<div class="zt-translation-label">ENGLISH TRANSLATION:</div>' +
+                '<div class="zt-translation-body">' + translatedHtml + '</div>';
 
             // Append the result to the outer container so it lives below the
             // touching badge+button row, not inside the flex layout.

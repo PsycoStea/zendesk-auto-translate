@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.21 (current)
+### v1.0.22 (current)
+- **Customer-message translation preserves the original spacing.** The old click handler ran the translator output through `split('\n').filter(line => line.length > 0).join('<br><br>')`, which unconditionally injected a blank line between every non-empty line — so a message with two consecutive lines (e.g. "Status: …" then "Solution: …") showed up in the translation with a blank line between them even though the customer hadn't typed one. Now the customer-message path uses the same HTML→markdown→translate→HTML roundtrip as the reply path: the message body's `innerHTML` is serialized to markdown-ish (so adjacent lines vs blank-line-separated blocks are distinguishable), translated per paragraph, and rehydrated with `<p>` tags and `<p><br></p>` sentinels. `.zt-translation-body p { margin: 0 }` so adjacent paragraphs sit on consecutive lines; sentinel paragraphs produce the visible blank lines via their `<br>` line-box.
+
+### v1.0.21
 - **More saturated pastels.** v1.0.20's muted pair (`#A8DADC` / `#B8E6B8`) read as desaturated rather than pastel. Keep the high-lightness pastel feel but bump saturation: badge `#A0E7E5` (teal, ~62% sat), button `#B4F1B4` (green, ~70% sat). Still soft enough not to compete with Zendesk's own UI, but actually colorful.
 
 ### v1.0.20

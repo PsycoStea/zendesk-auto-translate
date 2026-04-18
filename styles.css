@@ -90,6 +90,22 @@
     margin-bottom: 6px;
 }
 
+/*
+ * The translation body is rendered through markdownishToHtml, which
+ * emits <p> for each line and <p><br></p> as a blank-line sentinel.
+ * Zero out default paragraph margins so adjacent <p> tags sit on
+ * consecutive lines with no extra spacing; the sentinel <br> still
+ * produces a visible blank line via its own line-box height.
+ */
+.zt-translation-body p {
+    margin: 0;
+}
+.zt-translation-body hr {
+    border: none;
+    border-top: 1px solid #d8dcde;
+    margin: 8px 0;
+}
+
 .zt-toast {
     position: fixed;
     bottom: 24px;
