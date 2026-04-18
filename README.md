@@ -81,7 +81,11 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.19 (current)
+### v1.0.20 (current)
+- **Pastel fills, dark text, no stroke.** Badge is `#A8DADC` (muted teal), button is `#B8E6B8` (muted green). Text is Zendesk's default dark slate `#2f3941` — plenty of contrast on the light fills without needing `-webkit-text-stroke`, which was making letters harder to read rather than easier.
+- **Hover animation scoped to the button alone.** Dropped the row-level `:has()` lift that pulled both halves up together. The button now animates via `filter: brightness()` on hover and an inset shadow on active. The badge stays put so the seam between them doesn't shift.
+
+### v1.0.19
 - **Rectangle pair instead of pills.** Badge and button now sit in a shared `.zt-translate-row` wrapper with `display: inline-flex` and `overflow: hidden`. A small border-radius on the row rounds the outer corners while the shared edge between the two halves stays crisp — they read as one unit with a visible seam.
 - **New colors.** Language badge is `#00F7FF` (cyan, so country flags stay readable), button is `#00FF08` (bright green). White text with `-webkit-text-stroke: 0.6px #000` makes the lettering pop against the bright fills; a small text-shadow adds subtle depth.
 - **Animation lifts the whole row together** via `.zt-translate-row:has(.zt-translate-btn:hover:not(:disabled))`. Keeps the touching edges perfectly aligned during the 1px lift, then presses back down on active. Button itself gets a `filter: brightness()` darken on hover and active. Everything composited via transform / box-shadow / filter — zero idle cost.

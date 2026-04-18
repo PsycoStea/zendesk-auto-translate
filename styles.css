@@ -3,13 +3,16 @@
 /*
  * Badge + button sit in an inline-flex row with overflow:hidden, so the
  * outer corners get a subtle radius (from the row) while the inner shared
- * edge between the two halves stays crisp — they read as two rectangles
- * that meet at a seam, one visual unit.
+ * edge between the two halves stays crisp — two rectangles meeting at a
+ * seam, one visual unit.
  *
- * Hover/active animations lift the whole row together via
- * :has(.zt-translate-btn:hover), so the touching-edge alignment is never
- * broken by one half moving independently of the other. Transform and
- * box-shadow are GPU-composited; cost nothing while idle.
+ * Pastel fills with dark text. No outline/stroke on the letters — against
+ * light backgrounds, the dark text has enough contrast on its own.
+ *
+ * Only the button animates on hover; the badge stays put so the seam
+ * doesn't visibly shift. Animation is filter + inset box-shadow on the
+ * button only — no transform, which would be clipped by the row's
+ * overflow:hidden anyway.
  */
 
 .zt-translate-container {
@@ -21,19 +24,7 @@
     align-items: stretch;
     border-radius: 4px;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: transform 0.12s ease, box-shadow 0.15s ease;
-}
-
-.zt-translate-row:has(.zt-translate-btn:hover:not(:disabled)) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-}
-
-.zt-translate-row:has(.zt-translate-btn:active:not(:disabled)) {
-    transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-    transition-duration: 0.06s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .zt-translate-badge,
@@ -42,12 +33,10 @@
     align-items: center;
     padding: 7px 14px;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: 0.02em;
     line-height: 1.2;
-    color: #ffffff;
-    -webkit-text-stroke: 0.6px #000000;
-    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+    color: #2f3941;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     border: none;
     border-radius: 0;
@@ -55,25 +44,27 @@
 }
 
 .zt-translate-badge {
-    background: #00F7FF;
+    background: #A8DADC;
 }
 
 .zt-translate-btn {
-    background: #00FF08;
+    background: #B8E6B8;
     cursor: pointer;
-    transition: filter 0.15s ease;
+    transition: filter 0.15s ease, box-shadow 0.15s ease;
 }
 
 .zt-translate-btn:hover:not(:disabled) {
-    filter: brightness(0.92);
+    filter: brightness(0.94);
 }
 
 .zt-translate-btn:active:not(:disabled) {
-    filter: brightness(0.82);
+    filter: brightness(0.86);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.1);
 }
 
 .zt-translate-btn:disabled {
-    filter: grayscale(0.5) brightness(0.9);
+    background: #e1e5e5;
+    color: #9ca3af;
     cursor: not-allowed;
 }
 
