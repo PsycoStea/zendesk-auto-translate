@@ -81,7 +81,13 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.18 (current)
+### v1.0.19 (current)
+- **Rectangle pair instead of pills.** Badge and button now sit in a shared `.zt-translate-row` wrapper with `display: inline-flex` and `overflow: hidden`. A small border-radius on the row rounds the outer corners while the shared edge between the two halves stays crisp — they read as one unit with a visible seam.
+- **New colors.** Language badge is `#00F7FF` (cyan, so country flags stay readable), button is `#00FF08` (bright green). White text with `-webkit-text-stroke: 0.6px #000` makes the lettering pop against the bright fills; a small text-shadow adds subtle depth.
+- **Animation lifts the whole row together** via `.zt-translate-row:has(.zt-translate-btn:hover:not(:disabled))`. Keeps the touching edges perfectly aligned during the 1px lift, then presses back down on active. Button itself gets a `filter: brightness()` darken on hover and active. Everything composited via transform / box-shadow / filter — zero idle cost.
+- Result box and cleanup selectors updated to match the new container/row markup.
+
+### v1.0.18
 - **Modernized badge and button.** The customer-message language tag (e.g. `🇩🇰 Danish`) now uses a dark slate fill; the translate button uses Zendesk blue as an accent. Both share the same pill shape, font size, weight, and letter-spacing so they read as one visual family, with the dark/accent contrast carrying the info/action hierarchy. Button text is simplified to just "Translate" (no emoji, no "to English" — we're always translating to English on this side).
 - **Hover + click feedback.** Button hover darkens the fill, lifts 1px, and deepens the shadow; active state presses back down with a tighter shadow. Animations are on `transform` and `box-shadow` only so they're GPU-composited and cost nothing while idle.
 - **Translation result box** cleaned up to match — subtle gray background, slate accent border, uppercase-spaced label.

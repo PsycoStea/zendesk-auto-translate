@@ -324,15 +324,19 @@
             updateReplyButton();
         }
         
+        // Container holds a flex row (badge + button touching) on top and
+        // the translation result (once clicked) below.
         const translationContainer = document.createElement('div');
-        translationContainer.style.marginTop = '8px';
-        translationContainer.style.marginBottom = '8px';
-        
+        translationContainer.className = 'zt-translate-container';
+
+        const row = document.createElement('div');
+        row.className = 'zt-translate-row';
+
         const badge = document.createElement('div');
         badge.className = 'zt-translate-badge';
         badge.textContent = getLanguageDisplay(langCode);
-        translationContainer.appendChild(badge);
-        
+        row.appendChild(badge);
+
         const translateBtn = document.createElement('button');
         translateBtn.className = 'zt-translate-btn';
         translateBtn.textContent = 'Translate';
@@ -340,28 +344,31 @@
         translateBtn.addEventListener('click', async () => {
             translateBtn.disabled = true;
             translateBtn.textContent = 'Translating…';
-            
+
             const translated = await translate(textContent, 'en', langCode);
-            
+
             const resultDiv = document.createElement('div');
             resultDiv.className = 'zt-translation-result';
-            
+
             const formattedTranslation = translated
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0)
                 .join('<br><br>');
-            
+
             resultDiv.innerHTML = `
                 <div class="zt-translation-label">ENGLISH TRANSLATION:</div>
                 <div style="white-space: pre-wrap;">${formattedTranslation}</div>
             `;
-            
-            translateBtn.after(resultDiv);
+
+            // Append the result to the outer container so it lives below the
+            // touching badge+button row, not inside the flex layout.
+            translationContainer.appendChild(resultDiv);
             translateBtn.textContent = 'Translated';
         });
-        
-        translationContainer.appendChild(translateBtn);
+
+        row.appendChild(translateBtn);
+        translationContainer.appendChild(row);
         messageElement.parentNode.insertBefore(translationContainer, messageElement.nextSibling);
     }
     
@@ -911,7 +918,7 @@
 
     function resetTicketState() {
         detectedCustomerLanguage = null;
-        document.querySelectorAll('.zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
+        document.querySelectorAll('.zt-translate-container, .zt-translate-row, .zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
         document.querySelectorAll('[data-zt-processed]').forEach(el => {
             delete el.dataset.ztProcessed;
         });
@@ -966,7 +973,7 @@
 
     function cleanup() {
         teardownObservers();
-        document.querySelectorAll('.zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
+        document.querySelectorAll('.zt-translate-container, .zt-translate-row, .zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
         document.querySelectorAll('[data-zt-processed]').forEach(el => {
             delete el.dataset.ztProcessed;
         });

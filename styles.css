@@ -1,67 +1,80 @@
 /* Zendesk Auto Translator - Styles */
 
 /*
- * Badge (info) and button (action) share the same pill shape, font stack,
- * font-size, weight and letter-spacing so they read as one visual family —
- * the dark slate fill on the badge vs. the blue accent on the button
- * creates the hierarchy (this-is-information / this-is-what-you-click).
+ * Badge + button sit in an inline-flex row with overflow:hidden, so the
+ * outer corners get a subtle radius (from the row) while the inner shared
+ * edge between the two halves stays crisp — they read as two rectangles
+ * that meet at a seam, one visual unit.
  *
- * The button's hover/active transitions animate transform and box-shadow
- * only; both are GPU-composited by Chrome and cost nothing while idle.
+ * Hover/active animations lift the whole row together via
+ * :has(.zt-translate-btn:hover), so the touching-edge alignment is never
+ * broken by one half moving independently of the other. Transform and
+ * box-shadow are GPU-composited; cost nothing while idle.
  */
 
-.zt-translate-badge {
-    display: inline-block;
-    background: #2f3941;
-    color: #ffffff;
-    padding: 6px 12px;
-    border-radius: 9999px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    line-height: 1.2;
-    margin: 5px 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.zt-translate-btn {
-    display: inline-block;
-    background: #1f73b7;
-    color: #ffffff;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 9999px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    line-height: 1.2;
-    cursor: pointer;
+.zt-translate-container {
     margin: 8px 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    box-shadow: 0 1px 3px rgba(31, 115, 183, 0.28);
-    transition: background-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
 }
 
-.zt-translate-btn:hover {
-    background: #1a5f96;
+.zt-translate-row {
+    display: inline-flex;
+    align-items: stretch;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+.zt-translate-row:has(.zt-translate-btn:hover:not(:disabled)) {
     transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(31, 115, 183, 0.32);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
-.zt-translate-btn:active {
-    background: #144b78;
+.zt-translate-row:has(.zt-translate-btn:active:not(:disabled)) {
     transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(31, 115, 183, 0.2);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
     transition-duration: 0.06s;
 }
 
+.zt-translate-badge,
+.zt-translate-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    color: #ffffff;
+    -webkit-text-stroke: 0.6px #000000;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+}
+
+.zt-translate-badge {
+    background: #00F7FF;
+}
+
+.zt-translate-btn {
+    background: #00FF08;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+}
+
+.zt-translate-btn:hover:not(:disabled) {
+    filter: brightness(0.92);
+}
+
+.zt-translate-btn:active:not(:disabled) {
+    filter: brightness(0.82);
+}
+
 .zt-translate-btn:disabled {
-    background: #9ca3af;
+    filter: grayscale(0.5) brightness(0.9);
     cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-    opacity: 0.85;
 }
 
 .zt-translation-result {
