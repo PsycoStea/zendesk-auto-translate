@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.20 (current)
+### v1.0.21 (current)
+- **More saturated pastels.** v1.0.20's muted pair (`#A8DADC` / `#B8E6B8`) read as desaturated rather than pastel. Keep the high-lightness pastel feel but bump saturation: badge `#A0E7E5` (teal, ~62% sat), button `#B4F1B4` (green, ~70% sat). Still soft enough not to compete with Zendesk's own UI, but actually colorful.
+
+### v1.0.20
 - **Pastel fills, dark text, no stroke.** Badge is `#A8DADC` (muted teal), button is `#B8E6B8` (muted green). Text is Zendesk's default dark slate `#2f3941` — plenty of contrast on the light fills without needing `-webkit-text-stroke`, which was making letters harder to read rather than easier.
 - **Hover animation scoped to the button alone.** Dropped the row-level `:has()` lift that pulled both halves up together. The button now animates via `filter: brightness()` on hover and an inset shadow on active. The badge stays put so the seam between them doesn't shift.
 
