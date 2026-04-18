@@ -81,7 +81,13 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.25 (current)
+### v1.0.26 (current)
+- **Collapse HTML formatting whitespace in text nodes.** v1.0.25's diagnostic logs on the Refurbed auto-reply showed the `\n\n` between numbered list items was in the *source* markdown, not the translator response: Zendesk's HTML has literal newlines between `</a>`, `<br>`, and `<b>` tags for readability. My serializer preserved those as real `\n` characters, so between each list item we had `\n` (from text node) + `\n` (from `<br>`) + `\n` (from text node) = three newlines → normalized to `\n\n` → paragraph break in markdown → sentinel paragraph in rehydration → visible blank line.
+- Collapse runs of whitespace (including literal newlines) inside text nodes to a single space, matching how HTML renderers treat whitespace. Only `<br>` and block-level elements should produce newlines in the markdown.
+- Also trim leading/trailing whitespace per line in the final markdown, so the single spaces left over at line edges (e.g. from whitespace between a `<br>` and the next tag) don't leak through.
+- Cache key unchanged (`v4:`) — the serializer produces shorter but structurally equivalent input for messages without list items; for list-heavy messages the input is actually different (fewer paragraphs), so cached entries will repopulate.
+
+### v1.0.25
 - Diagnostic logging added on customer-message translation: each click writes a `[zt debug] customer message translation` group to the console containing the source `innerHTML`, the extracted markdown, the translator response, and the final HTML. Used to pin down whether list-item blank lines come from the source DOM, the translator response, or the rehydration. Will be removed once the spacing fix is confirmed.
 
 ### v1.0.24

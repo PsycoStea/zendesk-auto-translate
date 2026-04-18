@@ -512,7 +512,13 @@
         let out = '';
         for (const child of node.childNodes) {
             if (child.nodeType === Node.TEXT_NODE) {
-                out += child.textContent;
+                // HTML collapses runs of whitespace (including literal
+                // newlines between tags, which are just source formatting)
+                // into a single space when rendering. Do the same here so
+                // those formatting newlines don't show up as real line
+                // breaks in the markdown — only <br> and block elements
+                // should produce newlines.
+                out += child.textContent.replace(/\s+/g, ' ');
                 continue;
             }
             if (child.nodeType !== Node.ELEMENT_NODE) continue;
@@ -575,7 +581,14 @@
     function htmlToMarkdownish(html) {
         const container = document.createElement('div');
         container.innerHTML = html || '';
-        return serializeNodeAsMarkdown(container).replace(/\n{3,}/g, '\n\n').trim();
+        let md = serializeNodeAsMarkdown(container).replace(/\n{3,}/g, '\n\n');
+        // Trim leading/trailing whitespace on each line. After the text-node
+        // whitespace collapse above, formatting whitespace near <br>/<p>
+        // boundaries shows up as a single space at line edges (e.g.
+        // ".\n Alternativt" from "</a>\n<br>\n<b>"). Stripping per-line
+        // cleans that up without affecting intentional spaces inside lines.
+        md = md.split('\n').map(line => line.trim()).join('\n');
+        return md.trim();
     }
 
     function markdownishToHtml(md) {
