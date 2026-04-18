@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.24 (current)
+### v1.0.25 (current)
+- Diagnostic logging added on customer-message translation: each click writes a `[zt debug] customer message translation` group to the console containing the source `innerHTML`, the extracted markdown, the translator response, and the final HTML. Used to pin down whether list-item blank lines come from the source DOM, the translator response, or the rehydration. Will be removed once the spacing fix is confirmed.
+
+### v1.0.24
 - **Stop translator-introduced blank lines between numbered/bulleted list items.** When a customer message contained a numbered list (e.g. steps `1. … 2. … 3. …` on consecutive lines), Google reformatted the response by inserting blank lines between items. `markdownishToHtml` then interpreted those as paragraph breaks and emitted `<p><br></p>` sentinels — so the translation looked visually over-spaced vs. the tightly-packed source.
 - Since each paragraph-level chunk is already split on `\n{2,}` *before* the backend call, there cannot legitimately be any `\n{2,}` in the response. Collapse any that do appear back to single `\n` right after the translator returns, so the line structure of the translation matches the line structure of the source.
 - Cache version bumped to `v4:` so any previously-cached translations with the bloated blank lines are invalidated.

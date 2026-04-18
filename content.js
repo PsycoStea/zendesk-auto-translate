@@ -418,6 +418,11 @@
             translateBtn.disabled = true;
             translateBtn.textContent = 'Translating…';
 
+            console.groupCollapsed('[zt debug] customer message translation');
+            console.log('1. messageBody innerHTML:', messageBody.innerHTML);
+            console.log('2. sourceMarkdown going into provider:', JSON.stringify(sourceMarkdown));
+            console.log(`   paragraph count (split on /\\n{2,}/): ${sourceMarkdown.split(/\n{2,}/).length}`);
+
             // Translate the markdown-ish source (not the flat textContent)
             // and rehydrate with the same serializer used for reply output,
             // so adjacent lines stay adjacent and blank-line separators
@@ -425,7 +430,12 @@
             // a blank line between every line, producing the over-spaced
             // output agents reported.
             const translatedMarkdown = await translate(sourceMarkdown, 'en', langCode);
+            console.log('3. translatedMarkdown from provider:', JSON.stringify(translatedMarkdown));
+            console.log(`   paragraph count in response: ${translatedMarkdown.split(/\n{2,}/).length}`);
+
             const translatedHtml = markdownishToHtml(translatedMarkdown);
+            console.log('4. translatedHtml (to render):', translatedHtml);
+            console.groupEnd();
 
             const resultDiv = document.createElement('div');
             resultDiv.className = 'zt-translation-result';
