@@ -359,7 +359,67 @@
     // ============================================
     // UI PROCESSING
     // ============================================
-    
+
+    // Per-comment HTML storage for the toggle between translated and
+    // original view. WeakMaps so long message bodies don't bloat the DOM
+    // via dataset, and so entries disappear automatically when Zendesk
+    // rips the comment element out of the tree (e.g. on ticket switch).
+    const commentOriginalHtml = new WeakMap();
+    const commentTranslatedHtml = new WeakMap();
+
+    // Canonical agent-vs-customer signal. Inside every message item,
+    // Zendesk has <div mode="standalone" type="end-user|agent" data-test-id="omni-log-item-message">.
+    // The `type` attribute is the discriminator.
+    function isAgentMessage(messageElement) {
+        const msg = messageElement.closest('[data-test-id="omni-log-item-message"]');
+        if (!msg) return false;
+        return msg.getAttribute('type') === 'agent';
+    }
+
+    // Split the .zd-comment body into { beforeHtml, afterHtml }. beforeHtml
+    // is the customer's new reply (content before the first <blockquote>);
+    // afterHtml is the <blockquote> itself plus anything following (quoted
+    // email history that was already translated earlier in the ticket).
+    // Structure-preserving: wrapping <div>/<p> around the blockquote are
+    // kept on both sides so the HTML reconstructs cleanly.
+    function splitCommentAtFirstBlockquote(commentEl) {
+        if (!commentEl.querySelector('blockquote')) {
+            return { beforeHtml: commentEl.innerHTML, afterHtml: '' };
+        }
+        const beforeClone = commentEl.cloneNode(true);
+        const afterClone = commentEl.cloneNode(true);
+        trimFromFirstBlockquote(beforeClone);
+        trimBeforeFirstBlockquote(afterClone);
+        return { beforeHtml: beforeClone.innerHTML, afterHtml: afterClone.innerHTML };
+    }
+
+    function trimFromFirstBlockquote(root) {
+        const bq = root.querySelector('blockquote');
+        if (!bq) return;
+        // Remove bq's following siblings and bq itself.
+        while (bq.nextSibling) bq.parentNode.removeChild(bq.nextSibling);
+        let current = bq.parentNode;
+        bq.parentNode.removeChild(bq);
+        // Walk up: at each ancestor level, strip trailing siblings (keep
+        // ancestors themselves — they still hold content that came before
+        // the blockquote).
+        while (current && current !== root) {
+            while (current.nextSibling) current.parentNode.removeChild(current.nextSibling);
+            current = current.parentNode;
+        }
+    }
+
+    function trimBeforeFirstBlockquote(root) {
+        const bq = root.querySelector('blockquote');
+        if (!bq) return;
+        while (bq.previousSibling) bq.parentNode.removeChild(bq.previousSibling);
+        let current = bq.parentNode;
+        while (current && current !== root) {
+            while (current.previousSibling) current.parentNode.removeChild(current.previousSibling);
+            current = current.parentNode;
+        }
+    }
+
     async function processCustomerMessage(messageElement) {
         if (messageElement.dataset.ztProcessed) return;
         messageElement.dataset.ztProcessed = 'true';
@@ -367,14 +427,22 @@
         const messageBody = messageElement.querySelector('.zd-comment');
         if (!messageBody) return;
 
+        // Skip messages sent by agents (your own team). Inside every
+        // message item Zendesk has <div type="end-user|agent"
+        // data-test-id="omni-log-item-message">. Agent messages are
+        // either already in English or already bilingual (sent via this
+        // extension's reply flow) — they don't need translation.
+        if (isAgentMessage(messageElement)) return;
+
         const textContent = (messageBody.innerText || messageBody.textContent).trim();
         if (!textContent || textContent.length < 10) return;
 
-        // Serialize the message body to markdown so adjacent lines vs
-        // blank-line-separated paragraphs are preserved through the
-        // translation. textContent still drives language detection (cheap,
-        // and the first 500 chars are all that matter for that).
-        const sourceMarkdown = htmlToMarkdownish(messageBody.innerHTML || '') || textContent;
+        // Only the customer's new reply (content BEFORE the first
+        // <blockquote>) should be translated. The quoted email thread
+        // below was already translated earlier in the ticket.
+        const { beforeHtml, afterHtml } = splitCommentAtFirstBlockquote(messageBody);
+        const sourceMarkdown = htmlToMarkdownish(beforeHtml) || '';
+        if (!sourceMarkdown.trim()) return;  // Nothing to translate (e.g. only a forwarded quote).
 
         // Cache the detected language on the element itself so ticket
         // switches (which clear data-zt-processed to force UI re-render)
@@ -386,19 +454,23 @@
         }
         if (langCode === 'en') return;
 
-        // Only update the extension-wide detected language from messages the
-        // agent is actually looking at. Zendesk keeps other open tickets in
-        // the same DOM, and their customer messages would otherwise
-        // overwrite detectedCustomerLanguage in a race and leak their
-        // language into the visible ticket's reply button.
+        // Only update the extension-wide detected language from messages
+        // the agent is actually looking at. Zendesk keeps other open
+        // tickets in the same DOM, and their customer messages would
+        // otherwise overwrite detectedCustomerLanguage in a race.
         if (isElementVisible(messageElement)) {
             detectedCustomerLanguage = langCode;
             addReplyTranslateButton();
             updateReplyButton();
         }
-        
-        // Container holds a flex row (badge + button touching) on top and
-        // the translation result (once clicked) below.
+
+        // Stash the original .zd-comment innerHTML so the toggle can
+        // restore it after the swap.
+        commentOriginalHtml.set(messageBody, messageBody.innerHTML);
+
+        // Render the badge + toggle button row immediately, in a loading
+        // state, so the agent sees feedback while the provider call is
+        // in flight.
         const translationContainer = document.createElement('div');
         translationContainer.className = 'zt-translate-container';
 
@@ -410,48 +482,79 @@
         badge.textContent = getLanguageDisplay(langCode);
         row.appendChild(badge);
 
-        const translateBtn = document.createElement('button');
-        translateBtn.className = 'zt-translate-btn';
-        translateBtn.textContent = 'Translate';
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'zt-translate-btn';
+        toggleBtn.textContent = 'Translating…';
+        toggleBtn.disabled = true;
+        row.appendChild(toggleBtn);
 
-        translateBtn.addEventListener('click', async () => {
-            translateBtn.disabled = true;
-            translateBtn.textContent = 'Translating…';
-
-            console.groupCollapsed('[zt debug] customer message translation');
-            console.log('1. messageBody innerHTML:', messageBody.innerHTML);
-            console.log('2. sourceMarkdown going into provider:', JSON.stringify(sourceMarkdown));
-            console.log(`   paragraph count (split on /\\n{2,}/): ${sourceMarkdown.split(/\n{2,}/).length}`);
-
-            // Translate the markdown-ish source (not the flat textContent)
-            // and rehydrate with the same serializer used for reply output,
-            // so adjacent lines stay adjacent and blank-line separators
-            // survive. The old split/join('<br><br>') unconditionally put
-            // a blank line between every line, producing the over-spaced
-            // output agents reported.
-            const translatedMarkdown = await translate(sourceMarkdown, 'en', langCode);
-            console.log('3. translatedMarkdown from provider:', JSON.stringify(translatedMarkdown));
-            console.log(`   paragraph count in response: ${translatedMarkdown.split(/\n{2,}/).length}`);
-
-            const translatedHtml = markdownishToHtml(translatedMarkdown);
-            console.log('4. translatedHtml (to render):', translatedHtml);
-            console.groupEnd();
-
-            const resultDiv = document.createElement('div');
-            resultDiv.className = 'zt-translation-result';
-            resultDiv.innerHTML =
-                '<div class="zt-translation-label">ENGLISH TRANSLATION:</div>' +
-                '<div class="zt-translation-body">' + translatedHtml + '</div>';
-
-            // Append the result to the outer container so it lives below the
-            // touching badge+button row, not inside the flex layout.
-            translationContainer.appendChild(resultDiv);
-            translateBtn.textContent = 'Translated';
-        });
-
-        row.appendChild(translateBtn);
         translationContainer.appendChild(row);
         messageElement.parentNode.insertBefore(translationContainer, messageElement.nextSibling);
+
+        // Fire auto-translate (non-blocking — scan loop continues).
+        performAutoTranslate(messageBody, sourceMarkdown, afterHtml, langCode, badge, toggleBtn);
+    }
+
+    // Drive the auto-translate + in-place swap for one customer message.
+    // Also wired as the retry handler on failure, so the same function
+    // covers both initial run and user-triggered retry.
+    async function performAutoTranslate(messageBody, sourceMarkdown, afterHtml, langCode, badge, toggleBtn) {
+        const translatedMarkdown = await translate(sourceMarkdown, 'en', langCode);
+
+        // translate() catches provider errors internally and returns the
+        // original text unchanged. Treat identical input/output as failure
+        // so we surface a retry button instead of "translating" into the
+        // same language. Rare false positives (text that legitimately
+        // round-trips to itself) just show a harmless retry button.
+        const ok = translatedMarkdown && translatedMarkdown !== sourceMarkdown;
+
+        if (!ok) {
+            badge.textContent = getLanguageDisplay(langCode) + ' ⚠';
+            badge.title = 'Translation failed';
+            toggleBtn.disabled = false;
+            toggleBtn.textContent = 'Retry translation';
+            toggleBtn.onclick = () => {
+                badge.textContent = getLanguageDisplay(langCode);
+                badge.title = '';
+                toggleBtn.disabled = true;
+                toggleBtn.textContent = 'Translating…';
+                toggleBtn.onclick = null;
+                performAutoTranslate(messageBody, sourceMarkdown, afterHtml, langCode, badge, toggleBtn);
+            };
+            return;
+        }
+
+        const translatedHtml = markdownishToHtml(translatedMarkdown);
+
+        // Translated body = label + translated new-reply + quoted history
+        // (untouched). The label keeps the "ENGLISH TRANSLATION:" visual
+        // cue you asked to keep.
+        const translatedBodyHtml =
+            '<div class="zt-translation-label">ENGLISH TRANSLATION:</div>' +
+            '<div class="zt-translation-body">' + translatedHtml + '</div>' +
+            afterHtml;
+
+        commentTranslatedHtml.set(messageBody, translatedBodyHtml);
+
+        // Swap into translated view. Agent sees English by default.
+        messageBody.innerHTML = translatedBodyHtml;
+        messageBody.classList.add('zt-showing-translation');
+
+        toggleBtn.disabled = false;
+        toggleBtn.textContent = 'Show original';
+        toggleBtn.onclick = () => {
+            if (messageBody.classList.contains('zt-showing-translation')) {
+                const original = commentOriginalHtml.get(messageBody);
+                if (original != null) messageBody.innerHTML = original;
+                messageBody.classList.remove('zt-showing-translation');
+                toggleBtn.textContent = 'Show translation';
+            } else {
+                const tr = commentTranslatedHtml.get(messageBody);
+                if (tr != null) messageBody.innerHTML = tr;
+                messageBody.classList.add('zt-showing-translation');
+                toggleBtn.textContent = 'Show original';
+            }
+        };
     }
     
     // ============================================
@@ -1018,11 +1121,24 @@
 
     function resetTicketState() {
         detectedCustomerLanguage = null;
+        restoreSwappedComments();
         document.querySelectorAll('.zt-translate-container, .zt-translate-row, .zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
         document.querySelectorAll('[data-zt-processed]').forEach(el => {
             delete el.dataset.ztProcessed;
         });
         window.ztReplyButton = null;
+    }
+
+    // Before removing UI, put back the original .zd-comment contents for
+    // any message we swapped. Otherwise Zendesk is left with our translated
+    // HTML in its DOM — visible to the agent and also cached if Zendesk
+    // re-renders.
+    function restoreSwappedComments() {
+        document.querySelectorAll('.zd-comment.zt-showing-translation').forEach(body => {
+            const original = commentOriginalHtml.get(body);
+            if (original != null) body.innerHTML = original;
+            body.classList.remove('zt-showing-translation');
+        });
     }
 
     function checkTicketChange() {
@@ -1073,6 +1189,7 @@
 
     function cleanup() {
         teardownObservers();
+        restoreSwappedComments();
         document.querySelectorAll('.zt-translate-container, .zt-translate-row, .zt-translate-badge, .zt-translate-btn, .zt-translation-result, .zt-reply-wrapper, .zt-reply-translate-btn').forEach(el => el.remove());
         document.querySelectorAll('[data-zt-processed]').forEach(el => {
             delete el.dataset.ztProcessed;

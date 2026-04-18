@@ -81,7 +81,16 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.26 (current)
+### v1.0.27 (current)
+- **Auto-translate customer messages in place of the original.** Customer messages are now translated automatically on ticket load rather than on click. The translated content is swapped into the `.zd-comment` body itself (not shown below in a separate box), so the ticket reads entirely in English by default. Matches the "Auto Translator" name at last.
+- **Agent messages skipped.** Messages are identified by the `type` attribute on `[data-test-id="omni-log-item-message"]` (`end-user` vs `agent`). Agent messages are skipped entirely — no language detection, no badge, no button. They're either already in English or already bilingual (sent via the reply flow with the `---` separator).
+- **Quoted email history is preserved verbatim.** If a customer's reply contains a `<blockquote>` with the previous email thread, only the content *before* the first blockquote goes through translation. The quoted part is appended unchanged after the translation, and is included in the stored original — always visible, never re-translated.
+- **Toggle replaces the Translate button.** The touching badge+button row is still there, but the button is now a state toggle: "Show original" when the translated view is displayed, "Show translation" when the original is displayed. Both stored in a WeakMap keyed by the `.zd-comment` element.
+- **The "ENGLISH TRANSLATION:" label stays.** Rendered as a small uppercase-spaced header directly above the translated content inside the message body, visible whenever the translated view is active. Hidden in the original view.
+- **Retry on failure.** If translation fails (provider down, network error), the original stays visible, the badge gets a `⚠` suffix with a tooltip, and the button label becomes "Retry translation". Clicking retries the same call.
+- **Cleanup on disable / ticket switch.** Original `.zd-comment` contents are restored before UI removal, so Zendesk's DOM is left exactly as we found it.
+
+### v1.0.26
 - **Collapse HTML formatting whitespace in text nodes.** v1.0.25's diagnostic logs on the Refurbed auto-reply showed the `\n\n` between numbered list items was in the *source* markdown, not the translator response: Zendesk's HTML has literal newlines between `</a>`, `<br>`, and `<b>` tags for readability. My serializer preserved those as real `\n` characters, so between each list item we had `\n` (from text node) + `\n` (from `<br>`) + `\n` (from text node) = three newlines → normalized to `\n\n` → paragraph break in markdown → sentinel paragraph in rehydration → visible blank line.
 - Collapse runs of whitespace (including literal newlines) inside text nodes to a single space, matching how HTML renderers treat whitespace. Only `<br>` and block-level elements should produce newlines in the markdown.
 - Also trim leading/trailing whitespace per line in the final markdown, so the single spaces left over at line edges (e.g. from whitespace between a `<br>` and the next tag) don't leak through.
