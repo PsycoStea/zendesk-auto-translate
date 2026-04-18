@@ -81,7 +81,13 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.22 (current)
+### v1.0.23 (current)
+- **Preserve hyperlinks and bare URLs through translation.** Translators sometimes mangle the `[text](url)` markdown syntax used to represent hyperlinks — moving brackets around, dropping the URL, or occasionally translating words inside the URL — so links in customer messages and replies were getting stripped to plain text. Before sending any paragraph to the provider, every URL is now replaced with a `{{ztlink<N>}}` placeholder token (shape borrowed from Zendesk's own `{{ticket.requester.first_name}}` style, which translators pass through verbatim). The real URLs are restored after translation from a per-paragraph map.
+- Hyperlinks (anchor tags) round-trip as real `<a>` tags with `target="_blank" rel="noopener noreferrer"`; the anchor text is translated, the URL is exact.
+- Bare URLs in body text stay as bare URLs — no auto-linkification, matching agent preference.
+- Markdown link parser now allows one level of nested parens in the URL so Wikipedia-style links (`…/Foo_(bar)`) survive the roundtrip.
+
+### v1.0.22
 - **Customer-message translation preserves the original spacing.** The old click handler ran the translator output through `split('\n').filter(line => line.length > 0).join('<br><br>')`, which unconditionally injected a blank line between every non-empty line — so a message with two consecutive lines (e.g. "Status: …" then "Solution: …") showed up in the translation with a blank line between them even though the customer hadn't typed one. Now the customer-message path uses the same HTML→markdown→translate→HTML roundtrip as the reply path: the message body's `innerHTML` is serialized to markdown-ish (so adjacent lines vs blank-line-separated blocks are distinguishable), translated per paragraph, and rehydrated with `<p>` tags and `<p><br></p>` sentinels. `.zt-translation-body p { margin: 0 }` so adjacent paragraphs sit on consecutive lines; sentinel paragraphs produce the visible blank lines via their `<br>` line-box.
 
 ### v1.0.21

@@ -212,6 +212,56 @@
     // unreachable and naturally evicted by the LRU trim.
     const CACHE_VERSION = 'v3';
 
+    // Translators sometimes mangle markdown-style links ([text](url)) —
+    // moving the brackets around, dropping the URL, or translating words
+    // inside the URL. To preserve hyperlinks and bare URLs exactly,
+    // replace every URL with a {{ztlink<N>}} token before translating
+    // and swap the real URL back after. Tokens shaped like Zendesk
+    // placeholders ride through translators unchanged (we've seen Google
+    // preserve {{ticket.requester.first_name}} through many roundtrips).
+
+    function makeUrlToken(idx) {
+        return `{{ztlink${idx}}}`;
+    }
+
+    function protectUrls(text) {
+        const urls = [];
+        let out = text;
+
+        // Markdown links first. Allow one level of nested parens in the
+        // URL so Wikipedia-style links (…Foo_(bar)) survive.
+        out = out.replace(
+            /\[([^\]]+)\]\(((?:[^()]|\([^()]*\))*)\)/g,
+            (_match, txt, url) => {
+                urls.push(url);
+                return `[${txt}](${makeUrlToken(urls.length - 1)})`;
+            }
+        );
+
+        // Bare http(s) URLs. Trailing punctuation (period, comma, close
+        // paren, etc.) is split off so "See https://example.com." doesn't
+        // capture the period as part of the URL.
+        out = out.replace(
+            /https?:\/\/[^\s<>"'`]+/g,
+            (url) => {
+                const trailMatch = url.match(/[.,;:!?"'\])]+$/);
+                const trailing = trailMatch ? trailMatch[0] : '';
+                const cleanUrl = trailing ? url.slice(0, -trailing.length) : url;
+                urls.push(cleanUrl);
+                return makeUrlToken(urls.length - 1) + trailing;
+            }
+        );
+
+        return { text: out, urls };
+    }
+
+    function restoreUrls(text, urls) {
+        return text.replace(/\{\{ztlink(\d+)\}\}/g, (match, idx) => {
+            const i = parseInt(idx, 10);
+            return i < urls.length && urls[i] != null ? urls[i] : match;
+        });
+    }
+
     async function translate(text, targetLang = 'en', sourceLang = 'auto') {
         if (!guardExtensionContext()) return text;
 
@@ -233,9 +283,16 @@
             // preserved by the providers.
             const paragraphs = text.split(/\n{2,}/);
             const translatedParagraphs = await Promise.all(
-                paragraphs.map(p => p.trim()
-                    ? backend(p, targetLang, sourceLang)
-                    : Promise.resolve(''))
+                paragraphs.map(async (p) => {
+                    if (!p.trim()) return '';
+                    // Swap every URL for a {{ztlink<N>}} token before
+                    // translating, then put the real URLs back after.
+                    // Tokens look like Zendesk placeholders, which
+                    // translators preserve verbatim.
+                    const { text: tokenized, urls } = protectUrls(p);
+                    const translated = await backend(tokenized, targetLang, sourceLang);
+                    return restoreUrls(translated, urls);
+                })
             );
             const out = translatedParagraphs.join('\n\n');
 
@@ -520,7 +577,12 @@
 
         const inlineFmt = (s) => {
             let r = escapeHtml(s);
-            r = r.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`);
+            // Markdown link. Allow one level of nested parens in the URL
+            // (Wikipedia-style). Emit a real <a> with safe target/rel.
+            r = r.replace(
+                /\[([^\]]+)\]\(((?:[^()]|\([^()]*\))*)\)/g,
+                (_, t, u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${t}</a>`
+            );
             r = r.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             r = r.replace(/__([^_]+)__/g, '<u>$1</u>');
             r = r.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
