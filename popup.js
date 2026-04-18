@@ -5,35 +5,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusText = document.getElementById('statusText');
     const statusIndicator = document.querySelector('.status-indicator');
     const detectedLanguage = document.getElementById('detectedLanguage');
-    const memorySize = document.getElementById('memorySize');
-    const providerStatus = document.getElementById('providerStatus');
-    const providerGoogle = document.getElementById('providerGoogle');
-    const providerLibre = document.getElementById('providerLibre');
-    const libreFields = document.getElementById('libreFields');
+    const cacheStatus = document.getElementById('cacheStatus');
+    const fallbackStatus = document.getElementById('fallbackStatus');
     const libreUrl = document.getElementById('libreUrl');
     const libreApiKey = document.getElementById('libreApiKey');
     const saveBtn = document.getElementById('saveBtn');
     const saveMsg = document.getElementById('saveMsg');
 
-    const PROVIDER_LABEL = {
-        google: 'Google Translate',
-        libretranslate: 'LibreTranslate'
-    };
-
     chrome.storage.local.get(
-        ['enabled', 'provider', 'libretranslateUrl', 'libretranslateApiKey'],
+        ['enabled', 'libretranslateUrl', 'libretranslateApiKey'],
         (result) => {
             const enabled = result.enabled !== false;
             toggleSwitch.checked = enabled;
             updateStatus(enabled);
 
-            const provider = result.provider || 'google';
-            providerGoogle.checked = provider === 'google';
-            providerLibre.checked = provider === 'libretranslate';
             libreUrl.value = result.libretranslateUrl || '';
             libreApiKey.value = result.libretranslateApiKey || '';
-            updateLibreVisibility();
-            providerStatus.textContent = PROVIDER_LABEL[provider] || provider;
+            fallbackStatus.textContent = result.libretranslateUrl ? 'LibreTranslate' : 'Not configured';
         }
     );
 
@@ -43,7 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (chrome.runtime.lastError) return;
                 if (response) {
                     detectedLanguage.textContent = response.detectedLanguage || 'None';
-                    memorySize.textContent = response.memorySize || 0;
+                    cacheStatus.textContent = formatCacheStatus(
+                        response.memorySize || 0,
+                        response.cacheHits || 0,
+                        response.cacheTotal || 0
+                    );
                 }
             });
         }
@@ -61,21 +53,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    providerGoogle.addEventListener('change', updateLibreVisibility);
-    providerLibre.addEventListener('change', updateLibreVisibility);
-
     saveBtn.addEventListener('click', async () => {
         saveMsg.textContent = '';
         saveMsg.className = 'save-msg';
 
-        const provider = providerLibre.checked ? 'libretranslate' : 'google';
         const rawUrl = libreUrl.value.trim().replace(/\/+$/, '');
         const apiKey = libreApiKey.value.trim();
 
-        if (provider === 'libretranslate') {
-            if (!rawUrl) {
-                return showSaveError('LibreTranslate server URL is required.');
-            }
+        // Empty URL = fallback disabled. Any non-empty value must parse
+        // as http(s) and the agent must grant host permission once so
+        // the extension can actually call it from a Zendesk page.
+        if (rawUrl) {
             let parsed;
             try { parsed = new URL(rawUrl); } catch (_) {
                 return showSaveError('Server URL must be a valid URL, e.g. https://libretranslate.example.com');
@@ -87,21 +75,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const originPattern = `${parsed.protocol}//${parsed.host}/*`;
             const granted = await requestHostPermission(originPattern);
             if (!granted) {
-                return showSaveError('Permission for that host was denied. The extension cannot reach it until you grant access.');
+                return showSaveError('Permission for that host was denied. Fallback won\'t be able to reach it until you grant access.');
             }
         }
 
         chrome.storage.local.set(
             {
-                provider,
                 libretranslateUrl: rawUrl,
                 libretranslateApiKey: apiKey
             },
             () => {
-                providerStatus.textContent = PROVIDER_LABEL[provider] || provider;
+                fallbackStatus.textContent = rawUrl ? 'LibreTranslate' : 'Not configured';
                 saveMsg.textContent = 'Saved.';
                 saveMsg.classList.add('success');
-                // Tell open Zendesk tabs to refresh settings.
                 chrome.tabs.query({ url: 'https://*.zendesk.com/*' }, (tabs) => {
                     tabs.forEach(tab => {
                         chrome.tabs.sendMessage(tab.id, { action: 'settingsUpdated' });
@@ -128,14 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function updateLibreVisibility() {
-        if (providerLibre.checked) {
-            libreFields.classList.add('visible');
-        } else {
-            libreFields.classList.remove('visible');
-        }
-    }
-
     function updateStatus(enabled) {
         if (enabled) {
             statusText.textContent = 'Active';
@@ -146,6 +124,13 @@ document.addEventListener('DOMContentLoaded', () => {
             statusIndicator.classList.remove('active');
             statusIndicator.classList.add('inactive');
         }
+    }
+
+    function formatCacheStatus(size, hits, total) {
+        const entries = `${size} ${size === 1 ? 'entry' : 'entries'}`;
+        if (!total) return entries;
+        const pct = Math.round((hits / total) * 100);
+        return `${entries} · ${hits}/${total} hits (${pct}%)`;
     }
 
     function showSaveError(msg) {

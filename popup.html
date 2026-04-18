@@ -191,6 +191,13 @@
             border-color: #1f73b7;
         }
 
+        .libre-hint {
+            font-size: 11px;
+            color: #68737d;
+            line-height: 1.4;
+            margin-top: 2px;
+        }
+
         .save-btn {
             width: 100%;
             background: #1f73b7;
@@ -240,7 +247,7 @@
     <div class="header">
         <img src="icon48.png" alt="Icon">
         <h1>Zendesk Auto Translator</h1>
-        <span class="version">v1.0.27</span>
+        <span class="version">v1.0.28</span>
     </div>
 
     <div class="status-section">
@@ -252,16 +259,16 @@
             </span>
         </div>
         <div class="status-row">
-            <span class="status-label">Provider:</span>
-            <span class="status-value" id="providerStatus">Google Translate</span>
-        </div>
-        <div class="status-row">
             <span class="status-label">Detected Language:</span>
             <span class="status-value" id="detectedLanguage">None</span>
         </div>
         <div class="status-row">
-            <span class="status-label">Cached Translations:</span>
-            <span class="status-value" id="memorySize">0</span>
+            <span class="status-label">Fallback:</span>
+            <span class="status-value" id="fallbackStatus">Not configured</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Cache:</span>
+            <span class="status-value" id="cacheStatus">0 entries</span>
         </div>
     </div>
 
@@ -273,23 +280,13 @@
         </label>
     </div>
 
-    <span class="section-label">Translation Provider</span>
-    <div class="provider-options">
-        <label class="provider-option">
-            <input type="radio" name="provider" value="google" id="providerGoogle">
-            <span>Google Translate (default)</span>
-        </label>
-        <label class="provider-option">
-            <input type="radio" name="provider" value="libretranslate" id="providerLibre">
-            <span>LibreTranslate (self-hosted)</span>
-        </label>
-    </div>
-
-    <div class="libre-fields" id="libreFields">
-        <label for="libreUrl">Server URL</label>
+    <span class="section-label">Fallback translator (optional)</span>
+    <div class="libre-fields visible" id="libreFields">
+        <label for="libreUrl">LibreTranslate server URL</label>
         <input type="text" id="libreUrl" placeholder="https://libretranslate.mydomain.com" autocomplete="off" spellcheck="false">
         <label for="libreApiKey">API key (optional)</label>
         <input type="password" id="libreApiKey" placeholder="Leave blank if not required" autocomplete="off">
+        <div class="libre-hint">Used only when Google Translate fails. Leave the URL blank to disable fallback.</div>
     </div>
 
     <button class="save-btn" id="saveBtn">Save settings</button>

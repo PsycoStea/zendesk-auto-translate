@@ -7,19 +7,21 @@ chrome.runtime.onInstalled.addListener((details) => {
         chrome.storage.local.set({
             enabled: true,
             translationMemory: {},
-            provider: 'google',
             libretranslateUrl: '',
             libretranslateApiKey: ''
         });
     } else if (details.reason === 'update') {
         console.log('Zendesk Auto Translator updated to', chrome.runtime.getManifest().version);
-        // Backfill any newly-introduced settings without overwriting existing ones.
+        // Backfill newly-introduced settings without overwriting existing
+        // ones. The `provider` key from older versions is intentionally
+        // ignored now (Google is always primary, LibreTranslate is fallback
+        // if configured); removing it here keeps storage tidy.
         chrome.storage.local.get(['provider', 'libretranslateUrl', 'libretranslateApiKey'], (r) => {
             const patch = {};
-            if (r.provider === undefined) patch.provider = 'google';
             if (r.libretranslateUrl === undefined) patch.libretranslateUrl = '';
             if (r.libretranslateApiKey === undefined) patch.libretranslateApiKey = '';
             if (Object.keys(patch).length) chrome.storage.local.set(patch);
+            if (r.provider !== undefined) chrome.storage.local.remove('provider');
         });
     }
 });

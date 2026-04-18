@@ -12,7 +12,6 @@
     let translationMemory = {};
     let isEnabled = true;
     const settings = {
-        provider: 'google',
         libretranslateUrl: '',
         libretranslateApiKey: ''
     };
@@ -21,17 +20,21 @@
         return (u || '').trim().replace(/\/+$/, '');
     }
 
+    // Per-session cache stats. Reset on content-script reload so the
+    // numbers reflect current behavior rather than lifetime history.
+    const cacheStats = { hits: 0, total: 0 };
+
     chrome.storage.local.get(
-        ['enabled', 'translationMemory', 'provider', 'libretranslateUrl', 'libretranslateApiKey'],
+        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey'],
         (result) => {
             isEnabled = result.enabled !== false;
             translationMemory = result.translationMemory || {};
-            settings.provider = result.provider || 'google';
             settings.libretranslateUrl = normalizeUrl(result.libretranslateUrl);
             settings.libretranslateApiKey = result.libretranslateApiKey || '';
 
             if (isEnabled) {
-                console.log('Zendesk Auto Translator: Enabled, provider=' + settings.provider);
+                console.log('Zendesk Auto Translator: Enabled (Google primary, LibreTranslate fallback ' +
+                    (settings.libretranslateUrl ? 'configured)' : 'not configured)'));
                 init();
             }
         }
@@ -39,7 +42,6 @@
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local') return;
-        if (changes.provider) settings.provider = changes.provider.newValue || 'google';
         if (changes.libretranslateUrl) settings.libretranslateUrl = normalizeUrl(changes.libretranslateUrl.newValue);
         if (changes.libretranslateApiKey) settings.libretranslateApiKey = changes.libretranslateApiKey.newValue || '';
     });
@@ -54,7 +56,9 @@
                 enabled: isEnabled,
                 detectedLanguage: detectedCustomerLanguage ? getLanguageDisplay(detectedCustomerLanguage) : null,
                 memorySize: Object.keys(translationMemory).length,
-                provider: settings.provider
+                cacheHits: cacheStats.hits,
+                cacheTotal: cacheStats.total,
+                fallbackConfigured: !!settings.libretranslateUrl
             });
         } else if (request.action === 'settingsUpdated') {
             // storage.onChanged handles the actual refresh; just acknowledge.
@@ -191,17 +195,23 @@
         return data.translatedText || '';
     }
 
-    function providerLabel() {
-        return settings.provider === 'libretranslate' ? 'LibreTranslate' : 'Google Translate';
-    }
-
+    // Language detection uses the same primary-fallback chain as
+    // translation: try Google first, fall back to LibreTranslate if
+    // configured. On both-failed, return 'unknown' and toast once.
     async function detectLanguage(text) {
         if (!guardExtensionContext()) return 'unknown';
         try {
-            return settings.provider === 'libretranslate' ? await libreDetect(text) : await googleDetect(text);
-        } catch (err) {
-            console.error('[zt] Language detection error:', err);
-            showToast(readableError(err, providerLabel()), 'error');
+            return await googleDetect(text);
+        } catch (googleErr) {
+            if (settings.libretranslateUrl) {
+                try {
+                    return await libreDetect(text);
+                } catch (_) {
+                    // fall through to toast + unknown
+                }
+            }
+            console.error('[zt] Language detection error:', googleErr);
+            showToast(readableError(googleErr, 'Google Translate'), 'error');
             return 'unknown';
         }
     }
@@ -210,7 +220,7 @@
     // previously-cached results look wrong (e.g. paragraph-splitting, HTML
     // formatting preservation). Old entries with a different prefix become
     // unreachable and naturally evicted by the LRU trim.
-    const CACHE_VERSION = 'v4';
+    const CACHE_VERSION = 'v5';
 
     // Translators sometimes mangle markdown-style links ([text](url)) —
     // moving the brackets around, dropping the URL, or translating words
@@ -262,46 +272,59 @@
         });
     }
 
+    // Translate one already-split paragraph (no internal \n\n). Tries
+    // Google first; if Google throws, falls back to LibreTranslate when
+    // configured; if LibreTranslate also throws (or isn't configured),
+    // the original Google error propagates up. URLs are tokenized before
+    // the backend call so hyperlinks survive whichever provider handles
+    // it.
+    async function translateParagraph(text, targetLang, sourceLang) {
+        const { text: tokenized, urls } = protectUrls(text);
+        let translated;
+        try {
+            translated = await googleTranslate(tokenized, targetLang, sourceLang);
+        } catch (googleErr) {
+            if (!settings.libretranslateUrl) throw googleErr;
+            try {
+                translated = await libreTranslate(tokenized, targetLang, sourceLang);
+            } catch (_libreErr) {
+                // Both providers failed. Surface the Google error — it's
+                // usually more informative than LibreTranslate's.
+                throw googleErr;
+            }
+        }
+        const restored = restoreUrls(translated, urls);
+        // Since each chunk was already split on \n{2,} before the call,
+        // any \n{2,} in the response is translator reformatting (e.g.
+        // Google injecting blank lines between numbered list items).
+        // Collapse back to single \n so line structure matches the source.
+        return restored.replace(/\n{2,}/g, '\n');
+    }
+
     async function translate(text, targetLang = 'en', sourceLang = 'auto') {
         if (!guardExtensionContext()) return text;
 
-        const providerKey = settings.provider === 'libretranslate' ? 'libre' : 'google';
-        const memoryKey = `${CACHE_VERSION}:${providerKey}:${text.slice(0, 100)}_${targetLang}`;
+        // Unified cache key (no provider prefix) — a translation is a
+        // translation regardless of who produced it, and unifying keeps
+        // the hit rate higher.
+        const memoryKey = `${CACHE_VERSION}:${text.slice(0, 100)}_${targetLang}`;
+        cacheStats.total++;
         if (translationMemory[memoryKey]) {
+            cacheStats.hits++;
             console.log('[zt] Using cached translation (key:', memoryKey.slice(0, 60) + '…)');
             return translationMemory[memoryKey];
         }
 
         try {
-            const backend = settings.provider === 'libretranslate' ? libreTranslate : googleTranslate;
-
-            // Translate each blank-line-separated paragraph independently.
-            // Google's public endpoint (and some LibreTranslate configs)
-            // collapse \n\n to \n in the response, which destroys the
-            // greeting / body / sign-off spacing agents use. Splitting here
-            // preserves paragraph structure; single \n inside a paragraph is
-            // preserved by the providers.
+            // Translate each blank-line-separated paragraph independently
+            // so paragraph structure is preserved (Google's public endpoint
+            // tends to collapse \n\n to \n in responses). Per-paragraph
+            // Google→LibreTranslate fallback handled by translateParagraph.
             const paragraphs = text.split(/\n{2,}/);
             const translatedParagraphs = await Promise.all(
                 paragraphs.map(async (p) => {
                     if (!p.trim()) return '';
-                    // Swap every URL for a {{ztlink<N>}} token before
-                    // translating, then put the real URLs back after.
-                    // Tokens look like Zendesk placeholders, which
-                    // translators preserve verbatim.
-                    const { text: tokenized, urls } = protectUrls(p);
-                    const translated = await backend(tokenized, targetLang, sourceLang);
-                    const restored = restoreUrls(translated, urls);
-
-                    // Since we already split on \n{2,} before sending each
-                    // chunk, the input to this single backend call had no
-                    // blank-line paragraph breaks inside it. Any \n{2,}
-                    // that appears in the response is translator
-                    // reformatting — most visibly, Google injects blank
-                    // lines between numbered or bulleted list items.
-                    // Collapse those back to single \n so the line
-                    // structure matches the source.
-                    return restored.replace(/\n{2,}/g, '\n');
+                    return translateParagraph(p, targetLang, sourceLang);
                 })
             );
             const out = translatedParagraphs.join('\n\n');
@@ -315,7 +338,7 @@
             return out || text;
         } catch (err) {
             console.error('[zt] Translation error:', err);
-            showToast(readableError(err, providerLabel()), 'error');
+            showToast(readableError(err, 'Translation'), 'error');
             return text;
         }
     }

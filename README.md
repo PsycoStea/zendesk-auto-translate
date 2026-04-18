@@ -81,7 +81,15 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.27 (current)
+### v1.0.28 (current)
+- **LibreTranslate is now a fallback, not an alternative.** Google Translate is always primary. If a Google call throws (network, timeout, 5xx, blocked), the same paragraph is retried against LibreTranslate when a URL is configured. Fallback runs per-paragraph so a single Google hiccup in a long message doesn't force the whole message through the slower path.
+- **Popup UI redesigned.** The Google/LibreTranslate radio is gone. The LibreTranslate URL + API key fields now live under a "Fallback translator (optional)" section with a hint line explaining when they're used. An empty URL means no fallback.
+- **Cache key unified.** Previously keys were prefixed with the active provider (`v4:google:…` / `v4:libre:…`), which split the cache in half. v5 keys drop the provider segment — a translation is a translation, regardless of who produced it, and unifying doubles the cache hit rate in the mixed-provider case. Any `v4:` entries from before are unreachable and will naturally evict.
+- **Cache stat is now a hit rate.** The popup's "Cached Translations: N" row is replaced with "Cache: N entries · H/T hits (X%)", updated live from the content script. Hit/total counters are session-scoped (reset on content-script reload), so the number reflects *current* behavior rather than lifetime history. This is the instrumentation step — once you've observed the actual hit rate, we'll decide whether to bump the 100-entry limit, keep it, or remove the cache entirely.
+- **Language detection uses the same fallback chain.** Google detect first, LibreTranslate detect on failure if configured. Previously only the selected provider was used; now a Google rate-limit doesn't break auto-translate when LibreTranslate is available.
+- **Legacy `provider` setting cleaned up.** Existing installs that had `provider: 'libretranslate'` in storage: the value is ignored and removed on update. LibreTranslate URL + API key are preserved (now used as the fallback).
+
+### v1.0.27
 - **Auto-translate customer messages in place of the original.** Customer messages are now translated automatically on ticket load rather than on click. The translated content is swapped into the `.zd-comment` body itself (not shown below in a separate box), so the ticket reads entirely in English by default. Matches the "Auto Translator" name at last.
 - **Agent messages skipped.** Messages are identified by the `type` attribute on `[data-test-id="omni-log-item-message"]` (`end-user` vs `agent`). Agent messages are skipped entirely — no language detection, no badge, no button. They're either already in English or already bilingual (sent via the reply flow with the `---` separator).
 - **Quoted email history is preserved verbatim.** If a customer's reply contains a `<blockquote>` with the previous email thread, only the content *before* the first blockquote goes through translation. The quoted part is appended unchanged after the translation, and is included in the stored original — always visible, never re-translated.
