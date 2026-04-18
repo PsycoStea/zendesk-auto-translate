@@ -210,7 +210,7 @@
     // previously-cached results look wrong (e.g. paragraph-splitting, HTML
     // formatting preservation). Old entries with a different prefix become
     // unreachable and naturally evicted by the LRU trim.
-    const CACHE_VERSION = 'v3';
+    const CACHE_VERSION = 'v4';
 
     // Translators sometimes mangle markdown-style links ([text](url)) —
     // moving the brackets around, dropping the URL, or translating words
@@ -291,7 +291,17 @@
                     // translators preserve verbatim.
                     const { text: tokenized, urls } = protectUrls(p);
                     const translated = await backend(tokenized, targetLang, sourceLang);
-                    return restoreUrls(translated, urls);
+                    const restored = restoreUrls(translated, urls);
+
+                    // Since we already split on \n{2,} before sending each
+                    // chunk, the input to this single backend call had no
+                    // blank-line paragraph breaks inside it. Any \n{2,}
+                    // that appears in the response is translator
+                    // reformatting — most visibly, Google injects blank
+                    // lines between numbered or bulleted list items.
+                    // Collapse those back to single \n so the line
+                    // structure matches the source.
+                    return restored.replace(/\n{2,}/g, '\n');
                 })
             );
             const out = translatedParagraphs.join('\n\n');

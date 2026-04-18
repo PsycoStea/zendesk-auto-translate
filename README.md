@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.23 (current)
+### v1.0.24 (current)
+- **Stop translator-introduced blank lines between numbered/bulleted list items.** When a customer message contained a numbered list (e.g. steps `1. … 2. … 3. …` on consecutive lines), Google reformatted the response by inserting blank lines between items. `markdownishToHtml` then interpreted those as paragraph breaks and emitted `<p><br></p>` sentinels — so the translation looked visually over-spaced vs. the tightly-packed source.
+- Since each paragraph-level chunk is already split on `\n{2,}` *before* the backend call, there cannot legitimately be any `\n{2,}` in the response. Collapse any that do appear back to single `\n` right after the translator returns, so the line structure of the translation matches the line structure of the source.
+- Cache version bumped to `v4:` so any previously-cached translations with the bloated blank lines are invalidated.
+
+### v1.0.23
 - **Preserve hyperlinks and bare URLs through translation.** Translators sometimes mangle the `[text](url)` markdown syntax used to represent hyperlinks — moving brackets around, dropping the URL, or occasionally translating words inside the URL — so links in customer messages and replies were getting stripped to plain text. Before sending any paragraph to the provider, every URL is now replaced with a `{{ztlink<N>}}` placeholder token (shape borrowed from Zendesk's own `{{ticket.requester.first_name}}` style, which translators pass through verbatim). The real URLs are restored after translation from a per-paragraph map.
 - Hyperlinks (anchor tags) round-trip as real `<a>` tags with `target="_blank" rel="noopener noreferrer"`; the anchor text is translated, the URL is exact.
 - Bare URLs in body text stay as bare URLs — no auto-linkification, matching agent preference.
