@@ -20,17 +20,31 @@
         return (u || '').trim().replace(/\/+$/, '');
     }
 
-    // Per-session cache stats. Reset on content-script reload so the
-    // numbers reflect current behavior rather than lifetime history.
+    // Cache hit/total counters. Persisted to chrome.storage.local so the
+    // numbers accumulate across Chrome restarts (and across tabs). Loaded
+    // on init; writes are debounced to coalesce bursts of translate calls
+    // into a single storage write.
     const cacheStats = { hits: 0, total: 0 };
+    let cacheStatsSaveTimer = null;
+    function persistCacheStats() {
+        if (cacheStatsSaveTimer) return;
+        cacheStatsSaveTimer = setTimeout(() => {
+            cacheStatsSaveTimer = null;
+            safeStorageSet({ cacheStats: { hits: cacheStats.hits, total: cacheStats.total } });
+        }, 1000);
+    }
 
     chrome.storage.local.get(
-        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey'],
+        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats'],
         (result) => {
             isEnabled = result.enabled !== false;
             translationMemory = result.translationMemory || {};
             settings.libretranslateUrl = normalizeUrl(result.libretranslateUrl);
             settings.libretranslateApiKey = result.libretranslateApiKey || '';
+            if (result.cacheStats && typeof result.cacheStats === 'object') {
+                cacheStats.hits = Number(result.cacheStats.hits) || 0;
+                cacheStats.total = Number(result.cacheStats.total) || 0;
+            }
 
             if (isEnabled) {
                 console.log('Zendesk Auto Translator: Enabled (Google primary, LibreTranslate fallback ' +
@@ -44,6 +58,19 @@
         if (area !== 'local') return;
         if (changes.libretranslateUrl) settings.libretranslateUrl = normalizeUrl(changes.libretranslateUrl.newValue);
         if (changes.libretranslateApiKey) settings.libretranslateApiKey = changes.libretranslateApiKey.newValue || '';
+        // If another Zendesk tab (or a service worker) updated the cache
+        // stats, pick up the newer value. Guard against our own pending
+        // write losing counts — only take the incoming value if it's at
+        // least as high as ours for both counters.
+        if (changes.cacheStats && changes.cacheStats.newValue) {
+            const v = changes.cacheStats.newValue;
+            const incomingTotal = Number(v.total) || 0;
+            const incomingHits = Number(v.hits) || 0;
+            if (incomingTotal >= cacheStats.total) {
+                cacheStats.total = incomingTotal;
+                cacheStats.hits = incomingHits;
+            }
+        }
     });
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -311,9 +338,11 @@
         cacheStats.total++;
         if (translationMemory[memoryKey]) {
             cacheStats.hits++;
+            persistCacheStats();
             console.log('[zt] Using cached translation (key:', memoryKey.slice(0, 60) + '…)');
             return translationMemory[memoryKey];
         }
+        persistCacheStats();
 
         try {
             // Translate each blank-line-separated paragraph independently

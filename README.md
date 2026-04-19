@@ -81,7 +81,11 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.28 (current)
+### v1.0.29 (current)
+- **Cache stats persist across Chrome restarts.** The hit / total counters are now stored in `chrome.storage.local` and loaded at content-script startup, so the popup's "Cache: N entries · H/T hits (X%)" reflects lifetime behavior instead of just the current session. Writes are debounced (1s coalescing window) so a burst of translations doesn't thrash storage. Cross-tab updates are picked up via the `storage.onChanged` listener, taking the larger incoming total so no counts are lost.
+- **New icon.** Replaced the basic default with a bolder, more recognizable mark: pastel teal rounded square (same colour family as the in-page language badge) with bold white "A 文" — Latin on the left, CJK on the right — that reads as "translate between languages" at a glance. Master rendered at 512x512 and downscaled with LANCZOS for 48 and 16 so the small sizes stay sharp. Generator script lives at `scripts/generate_icons.py` (macOS Pillow + system fonts) so the icons can be regenerated deterministically later if the design is tweaked.
+
+### v1.0.28
 - **LibreTranslate is now a fallback, not an alternative.** Google Translate is always primary. If a Google call throws (network, timeout, 5xx, blocked), the same paragraph is retried against LibreTranslate when a URL is configured. Fallback runs per-paragraph so a single Google hiccup in a long message doesn't force the whole message through the slower path.
 - **Popup UI redesigned.** The Google/LibreTranslate radio is gone. The LibreTranslate URL + API key fields now live under a "Fallback translator (optional)" section with a hint line explaining when they're used. An empty URL means no fallback.
 - **Cache key unified.** Previously keys were prefixed with the active provider (`v4:google:…` / `v4:libre:…`), which split the cache in half. v5 keys drop the provider segment — a translation is a translation, regardless of who produced it, and unifying doubles the cache hit rate in the mixed-provider case. Any `v4:` entries from before are unreachable and will naturally evict.
