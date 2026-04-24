@@ -25,13 +25,46 @@
     // on init; writes are debounced to coalesce bursts of translate calls
     // into a single storage write.
     const cacheStats = { hits: 0, total: 0 };
-    let cacheStatsSaveTimer = null;
-    function persistCacheStats() {
-        if (cacheStatsSaveTimer) return;
-        cacheStatsSaveTimer = setTimeout(() => {
-            cacheStatsSaveTimer = null;
-            safeStorageSet({ cacheStats: { hits: cacheStats.hits, total: cacheStats.total } });
+
+    // Max entries kept in translationMemory. v1.0.29 field data across two
+    // agents over 4 days showed hit rates of 79% and 86% at a 100-entry
+    // cap — the cache was constantly evicting. 2000 entries ≈ 3MB of
+    // storage, well under Chrome's 5MB default quota, and gives hot
+    // templates and boilerplate room to stay resident.
+    const CACHE_MAX = 2000;
+
+    // Combined debounced writer for cacheStats + translationMemory. Both
+    // get dirty on every translate call (total++, and either a LRU bump
+    // on hit or a new-entry insert on miss) — coalescing into a single
+    // storage write per 1s keeps disk I/O sane during burst activity.
+    let storageWriteTimer = null;
+    let memoryDirty = false;
+    let statsDirty = false;
+    function scheduleStorageWrite() {
+        if (storageWriteTimer) return;
+        storageWriteTimer = setTimeout(() => {
+            storageWriteTimer = null;
+            const payload = {};
+            if (statsDirty) {
+                payload.cacheStats = { hits: cacheStats.hits, total: cacheStats.total };
+                statsDirty = false;
+            }
+            if (memoryDirty) {
+                payload.translationMemory = translationMemory;
+                memoryDirty = false;
+            }
+            if (Object.keys(payload).length) safeStorageSet(payload);
         }, 1000);
+    }
+
+    function persistCacheStats() {
+        statsDirty = true;
+        scheduleStorageWrite();
+    }
+
+    function persistMemory() {
+        memoryDirty = true;
+        scheduleStorageWrite();
     }
 
     chrome.storage.local.get(
@@ -89,6 +122,23 @@
             });
         } else if (request.action === 'settingsUpdated') {
             // storage.onChanged handles the actual refresh; just acknowledge.
+            sendResponse({ success: true });
+        } else if (request.action === 'clearCache') {
+            // Popup's Clear button. Drop the in-memory cache + counters and
+            // cancel any pending debounced write so it can't revive them,
+            // then persist the empty state immediately so a page reload or
+            // another tab sees the cleared cache without waiting for the
+            // next translate call.
+            translationMemory = {};
+            cacheStats.hits = 0;
+            cacheStats.total = 0;
+            memoryDirty = false;
+            statsDirty = false;
+            if (storageWriteTimer) { clearTimeout(storageWriteTimer); storageWriteTimer = null; }
+            safeStorageSet({
+                translationMemory: {},
+                cacheStats: { hits: 0, total: 0 }
+            });
             sendResponse({ success: true });
         }
     });
@@ -338,9 +388,17 @@
         cacheStats.total++;
         if (translationMemory[memoryKey]) {
             cacheStats.hits++;
+            // LRU bump: JS objects preserve insertion order, so delete +
+            // reassign moves this key to the end of the iteration order —
+            // i.e. most-recently-used. Oldest key (first in iteration)
+            // becomes the eviction candidate on the next miss.
+            const cached = translationMemory[memoryKey];
+            delete translationMemory[memoryKey];
+            translationMemory[memoryKey] = cached;
             persistCacheStats();
+            persistMemory();
             console.log('[zt] Using cached translation (key:', memoryKey.slice(0, 60) + '…)');
-            return translationMemory[memoryKey];
+            return cached;
         }
         persistCacheStats();
 
@@ -359,10 +417,18 @@
             const out = translatedParagraphs.join('\n\n');
 
             if (out) {
+                // Evict oldest entries until there's room for the new one.
+                // `while` handles the post-migration case where storage was
+                // loaded with > CACHE_MAX entries (shouldn't happen, but
+                // cheap insurance against a future lowered cap).
                 const keys = Object.keys(translationMemory);
-                if (keys.length >= 100) delete translationMemory[keys[0]];
+                let i = 0;
+                while (keys.length - i >= CACHE_MAX) {
+                    delete translationMemory[keys[i]];
+                    i++;
+                }
                 translationMemory[memoryKey] = out;
-                safeStorageSet({ translationMemory });
+                persistMemory();
             }
             return out || text;
         } catch (err) {

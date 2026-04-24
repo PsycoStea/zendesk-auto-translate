@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const libreApiKey = document.getElementById('libreApiKey');
     const saveBtn = document.getElementById('saveBtn');
     const saveMsg = document.getElementById('saveMsg');
+    const clearCacheBtn = document.getElementById('clearCacheBtn');
 
     chrome.storage.local.get(
         ['enabled', 'libretranslateUrl', 'libretranslateApiKey'],
@@ -97,6 +98,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     saveMsg.textContent = '';
                     saveMsg.className = 'save-msg';
                 }, 3000);
+            }
+        );
+    });
+
+    clearCacheBtn.addEventListener('click', () => {
+        clearCacheBtn.disabled = true;
+        const originalLabel = clearCacheBtn.textContent;
+
+        // Source of truth is chrome.storage.local — wiping it here (and
+        // pushing the empty state to every open Zendesk tab so their
+        // in-memory copies don't race us back on the next translate) is
+        // safe even if no Zendesk tab is open.
+        chrome.storage.local.set(
+            { translationMemory: {}, cacheStats: { hits: 0, total: 0 } },
+            () => {
+                chrome.tabs.query({ url: 'https://*.zendesk.com/*' }, (tabs) => {
+                    tabs.forEach(tab => {
+                        chrome.tabs.sendMessage(tab.id, { action: 'clearCache' }, () => {
+                            // Swallow runtime.lastError for tabs that haven't
+                            // loaded the content script yet.
+                            void chrome.runtime.lastError;
+                        });
+                    });
+                });
+                cacheStatus.textContent = formatCacheStatus(0, 0, 0);
+                clearCacheBtn.textContent = 'Cleared ✓';
+                setTimeout(() => {
+                    clearCacheBtn.textContent = originalLabel;
+                    clearCacheBtn.disabled = false;
+                }, 1500);
             }
         );
     });

@@ -43,7 +43,7 @@ Small, localized changes. Each ships as its own version so the team can pull upd
 **Effort:** ~45 min
 
 **Decisions:**
-- Defaults: `Cmd+Shift+X` on macOS, `Ctrl+Shift+T` on Windows/Linux.
+- Defaults: `Cmd+Shift+X` on macOS, `Ctrl+Shift+X` on Windows/Linux.
 - Agent can change via `chrome://extensions/shortcuts` (Chrome's built-in customization UI — nothing to build in our popup).
 - Shortcut triggers the currently-visible ticket's reply-translate flag click programmatically.
 

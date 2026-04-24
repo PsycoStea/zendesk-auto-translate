@@ -241,13 +241,36 @@
 
         .status-indicator.active { background-color: #10b981; }
         .status-indicator.inactive { background-color: #ef4444; }
+
+        .clear-cache-btn {
+            width: 100%;
+            margin-top: 10px;
+            background: white;
+            color: #68737d;
+            border: 1px solid #d8dcde;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .clear-cache-btn:hover {
+            background: #fef2f2;
+            color: #cc3340;
+            border-color: #fca5a5;
+        }
+        .clear-cache-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <img src="icon48.png" alt="Icon">
         <h1>Zendesk Auto Translator</h1>
-        <span class="version">v1.0.29</span>
+        <span class="version">v1.0.30</span>
     </div>
 
     <div class="status-section">
@@ -270,6 +293,7 @@
             <span class="status-label">Cache:</span>
             <span class="status-value" id="cacheStatus">0 entries</span>
         </div>
+        <button class="clear-cache-btn" id="clearCacheBtn" type="button">Clear cache</button>
     </div>
 
     <div class="toggle-section">

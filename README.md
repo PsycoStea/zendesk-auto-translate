@@ -12,7 +12,7 @@ Internal Chrome extension for the **Mac Group Global** customer service team. Au
 - Language badge and "Translate to English" button on non-English customer messages.
 - Flag button in the reply toolbar that translates your English reply back into the customer's detected language.
 - Reply translation uses CKEditor-aware paste strategies so text actually sticks (see v1.0.7 notes below).
-- Translation memory: up to 100 recent translations cached locally per browser, keyed by provider.
+- Translation memory: up to 2000 recent translations cached locally per browser, LRU-evicted. "Clear cache" button in the popup.
 - Two selectable providers from the popup:
   - **Google Translate** — free, uses the public `translate.googleapis.com` endpoint (no key).
   - **LibreTranslate** — your own self-hosted server. Configure URL + optional API key in the popup; Chrome prompts once for permission to reach the host.
@@ -81,7 +81,12 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.29 (current)
+### v1.0.30 (current)
+- **Cache upgrade: 20× capacity + true LRU.** `CACHE_MAX` raised from 100 to 2000 entries. v1.0.29's telemetry on two agents over 4 days showed hit rates of 79% and 86% at the old 100-entry cap — the cache was constantly evicting hot boilerplate. 2000 entries ≈ 3MB of storage, comfortably under Chrome's 5MB default quota, and leaves room for recurring templates and greetings to stay resident. Eviction is now proper LRU: every cache hit bumps the key to the end of the insertion order (via delete + reassign), so the oldest-accessed entry — not the oldest-inserted — is what falls out on the next miss.
+- **Clear cache button in the popup.** Small button under the cache status row. Wipes `translationMemory` and resets the hit/total counters in `chrome.storage.local`, then broadcasts a `clearCache` message to every open Zendesk tab so their in-memory copies don't race stale values back in on the next translate call. Useful after a cache-version bump, or just to reset the hit-rate stat for measurement.
+- **Debounced memory writes.** `translationMemory` writes piggy-back on the same 1s coalescing timer that already batched the `cacheStats` writes, instead of a fresh `chrome.storage.local.set` on every miss. A burst of translations on ticket load now produces a single storage write per second regardless of cache activity.
+
+### v1.0.29
 - **Cache stats persist across Chrome restarts.** The hit / total counters are now stored in `chrome.storage.local` and loaded at content-script startup, so the popup's "Cache: N entries · H/T hits (X%)" reflects lifetime behavior instead of just the current session. Writes are debounced (1s coalescing window) so a burst of translations doesn't thrash storage. Cross-tab updates are picked up via the `storage.onChanged` listener, taking the larger incoming total so no counts are lost.
 - **New icon.** Replaced the basic default with a bolder, more recognizable mark: pastel teal rounded square (same colour family as the in-page language badge) with bold white "A 文" — Latin on the left, CJK on the right — that reads as "translate between languages" at a glance. Master rendered at 512x512 and downscaled with LANCZOS for 48 and 16 so the small sizes stay sharp. Generator script lives at `scripts/generate_icons.py` (macOS Pillow + system fonts) so the icons can be regenerated deterministically later if the design is tweaked.
 
