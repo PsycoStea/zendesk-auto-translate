@@ -89,7 +89,15 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.49 (current)
+### v1.0.50 (current)
+- **PDF viewer: third architecture's the charm.** v1.0.49's symptoms — the wrong PDF (the bundled sample) staying on screen, "background returned undefined bytes", `DataCloneError` on `postMessage` — all traced back to a wrong assumption: I thought `chrome.runtime.sendMessage` used structured-clone like `window.postMessage` does. **It doesn't — it's JSON-only.** `ArrayBuffer` round-trips through `chrome.runtime.sendMessage` as `undefined`, not as a typed array, so the bytes the background SW fetched never reached the content script. v1.0.49's whole "fetch in background, ship bytes via runtime message" pipeline was structurally broken.
+  
+  The right architecture is simpler: **let the iframe fetch the URL itself.** The PDF.js viewer iframe loads at `chrome-extension://` origin, which is an extension page — extension pages with matching `host_permissions` can `fetch()` with `credentials: 'include'` and Chrome uses the user's actual cookie jar for the target origin (so Zendesk's session cookie travels), CORS bypassed. PDF.js's `PDFViewerApplication.open({ url, withCredentials: true })` is exactly that knob. The content script now `postMessage`s only a URL string to the iframe; the bridge in `zt-bridge.js` calls `open()` with `withCredentials: true`; PDF.js does the credentialed fetch and renders.
+  
+  Net code change: smaller than v1.0.49 — no background SW round-trip, no binary transport, no large-message concerns. Background SW's `zt-fetch-pdf` handler removed (dead code now).
+- **Brief sample-PDF flash on first load is acceptable.** The viewer auto-loads its bundled sample on iframe-init since we don't pass `?file=` (we hand it the URL via `postMessage` after init). The override fires within ~50–200 ms and replaces the sample with the real PDF. Tried two ways to suppress the flash; both required either patching PDF.js source or a fragile URL-hash hack. Not worth the maintenance burden.
+
+### v1.0.49
 - **PDF viewer: three errors fixed in one release.** v1.0.48 surfaced a stack of issues that hid behind each other. Working through the console:
   - **CSP rejected the inline bridge script.** Chrome extensions enforce `script-src 'self'` by default — no `<script>` tags with body. The bridge moved into its own file at `lib/pdfjs/web/zt-bridge.js`, loaded via `<script src="zt-bridge.js">`. Same logic, just external.
   - **PDF.js's default sample-PDF auto-load 404'd.** When given no `?file=` param, the viewer auto-loads `compressed.tracemonkey-pldi-09.pdf` from its own directory; v1.0.45's bundle-cleanup deleted that file. The auto-load failure showed as an error in the viewer before our bytes arrived. Re-included the sample (~1 MB) so the auto-load succeeds briefly before our `postMessage` overrides it with the real PDF.

@@ -27,37 +27,14 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // PDF fetch dispatch (v1.0.49). Background-SW fetches with
-    // credentials: 'include' use the user's actual cookie jar for
-    // hosts in host_permissions, so Zendesk's
-    // /attachments/<token>/ redirector authenticates correctly and
-    // follows through to the file on *.zdusercontent.com. Content-
-    // script fetches in MV3 are treated as cross-origin from the
-    // chrome-extension:// origin and don't get the cookies — that's
-    // why v1.0.48's "Failed to fetch" happened.
-    if (request && request.type === 'zt-fetch-pdf' && typeof request.url === 'string') {
-        fetch(request.url, {
-            credentials: 'include',
-            redirect: 'follow',
-        }).then(async (r) => {
-            if (!r.ok) {
-                throw new Error(`HTTP ${r.status} ${r.statusText}`);
-            }
-            const buf = await r.arrayBuffer();
-            // ArrayBuffer transfers via structured clone — sendResponse
-            // supports it. Wrap in object so the receiving side can
-            // distinguish success from error shape without a type
-            // discriminator on the buffer itself.
-            sendResponse({ ok: true, data: buf, contentType: r.headers.get('content-type') });
-        }).catch((err) => {
-            sendResponse({ ok: false, error: (err && err.message) || String(err) });
-        });
-        // Keep the message channel open for the async sendResponse.
-        return true;
-    }
-
-    // Default: ack and exit. Other messages flow through the content-
-    // script-side listener.
+    // v1.0.49 added a `zt-fetch-pdf` handler here that fetched the PDF
+    // bytes server-side and returned them via sendResponse. That
+    // approach failed because `chrome.runtime.sendMessage` is JSON-
+    // only — `ArrayBuffer` got serialized to `undefined`. v1.0.50
+    // moved the credentialed fetch into the PDF.js viewer iframe
+    // itself (extension pages can fetch host_permissions origins with
+    // cookies via the user's cookie jar), so the round-trip through
+    // background isn't needed.
     sendResponse({ received: true });
     return true;
 });

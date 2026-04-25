@@ -1770,52 +1770,41 @@
         // start there instead of leaving focus on the original link.
         try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
 
-        // Route the fetch through the background service worker (v1.0.49).
-        // In Manifest V3, content-script fetches are treated as cross-
-        // origin from the chrome-extension:// origin and Zendesk's
-        // attachment redirector doesn't send the cookies the agent's
-        // session needs. Background-SW fetches with credentials: 'include'
-        // hit the host_permissions fast path: CORS is bypassed for
-        // permitted hosts and the user's actual cookie jar is used.
-        // See background.js's chrome.runtime.onMessage handler for
-        // the type:'zt-fetch-pdf' branch.
-        const iframeReady = new Promise((resolve) => {
-            iframe.addEventListener('load', resolve, { once: true });
-        });
-
-        let bytes;
+        // v1.0.50 approach: pass the URL string into the iframe and let
+        // PDF.js fetch it itself with `withCredentials: true`. The
+        // iframe runs at chrome-extension:// origin (an extension page),
+        // and extension pages with matching host_permissions can fetch
+        // with credentials — Chrome uses the user's actual cookie jar
+        // for the target origin (so Zendesk's session cookie travels)
+        // and CORS is bypassed.
+        //
+        // History:
+        //   v1.0.48: content script tried to fetch directly. Failed
+        //     because in MV3, content-script fetches are cross-origin
+        //     from chrome-extension:// and don't get cookies.
+        //   v1.0.49: routed through background SW. Fetch worked but
+        //     `chrome.runtime.sendMessage` is JSON-only — the
+        //     ArrayBuffer arrived as `undefined` on the other side, so
+        //     postMessage to the viewer crashed with DataCloneError.
+        //   v1.0.50: skip the round-trip entirely. URL → iframe →
+        //     PDF.js does the credentialed fetch.
         try {
-            console.log('[zt-pdf] requesting fetch from background', pdfUrl);
-            const res = await chrome.runtime.sendMessage({
-                type: 'zt-fetch-pdf',
-                url: pdfUrl,
+            await new Promise((resolve) => {
+                iframe.addEventListener('load', resolve, { once: true });
             });
-            if (!res || !res.ok) {
-                throw new Error((res && res.error) || 'no response from background');
-            }
-            console.log('[zt-pdf] background returned', res.data && res.data.byteLength, 'bytes', res.contentType);
-            bytes = res.data;
-        } catch (err) {
-            console.error('[zt-pdf] fetch error:', err);
-            status.textContent = `Failed to load PDF: ${err.message || err}`;
-            status.classList.add('zt-pdf-status-error');
-            return;
-        }
-
-        try {
-            await iframeReady;
-            // Iframe may have closed during fetch (user hit Escape).
+            // Iframe may have closed during the load wait (user hit Escape).
             if (!pdfModal || !iframe.contentWindow) return;
-            console.log('[zt-pdf] posting', bytes.byteLength, 'bytes to viewer');
-            // Transferable: the ArrayBuffer is moved (not copied) so
-            // we don't pay double-memory for large PDFs.
+            console.log('[zt-pdf] posting URL to viewer:', pdfUrl);
             iframe.contentWindow.postMessage(
-                { type: 'zt-pdf-load', data: bytes },
-                '*',
-                [bytes]
+                { type: 'zt-pdf-load', url: pdfUrl },
+                '*'
             );
-            // Hide status once we've handed off. The viewer will show
-            // its own progress bar from here.
+            // Hide status once we've handed off. PDF.js's own progress
+            // bar takes over from here. The default sample PDF that
+            // briefly auto-loaded gets replaced by `open({url, ...})`
+            // — short visual flash, acceptable trade-off vs. the
+            // alternatives (which all turned out to be worse, see
+            // history above).
             status.style.display = 'none';
         } catch (err) {
             console.error('[zt-pdf] postMessage failed:', err);
