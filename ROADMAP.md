@@ -188,7 +188,9 @@ Shipped in v1.0.36. `▾` caret next to the reply flag opens a fixed-position me
 
 ---
 
-### 9. ⬜ Image preservation during translation (from #12)
+### 9. ✅ Image preservation during translation (from #12)
+
+Shipped in v1.0.37. `<img>` elements are tokenized to `{{ztimgN}}` during HTML-to-markdown serialization (capturing the full `outerHTML`); the token survives translation as plain text and the rehydrator swaps it back to the original `<img>` so all attributes (`src`, `alt`, `width`, `height`, `style`) round-trip exactly. Alt text is left untranslated by design. Applies to both customer messages and reply translation.
 
 **Effort:** ~2 hours
 

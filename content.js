@@ -679,7 +679,7 @@
         // <blockquote>) should be translated. The quoted email thread
         // below was already translated earlier in the ticket.
         const { beforeHtml, afterHtml } = splitCommentAtFirstBlockquote(messageBody);
-        const sourceMarkdown = htmlToMarkdownish(beforeHtml) || '';
+        const { md: sourceMarkdown, imgs: sourceImgs } = htmlToMarkdownish(beforeHtml);
         if (!sourceMarkdown.trim()) return;  // Nothing to translate (e.g. only a forwarded quote).
 
         // Detection precedence:
@@ -759,13 +759,13 @@
         messageElement.parentNode.insertBefore(translationContainer, messageElement.nextSibling);
 
         // Fire auto-translate (non-blocking — scan loop continues).
-        performAutoTranslate(messageBody, sourceMarkdown, afterHtml, langCode, badge, toggleBtn);
+        performAutoTranslate(messageBody, sourceMarkdown, sourceImgs, afterHtml, langCode, badge, toggleBtn);
     }
 
     // Drive the auto-translate + in-place swap for one customer message.
     // Also wired as the retry handler on failure, so the same function
     // covers both initial run and user-triggered retry.
-    async function performAutoTranslate(messageBody, sourceMarkdown, afterHtml, langCode, badge, toggleBtn) {
+    async function performAutoTranslate(messageBody, sourceMarkdown, sourceImgs, afterHtml, langCode, badge, toggleBtn) {
         const translatedMarkdown = await translate(sourceMarkdown, 'en', langCode);
 
         // translate() catches provider errors internally and returns the
@@ -786,12 +786,12 @@
                 toggleBtn.disabled = true;
                 toggleBtn.textContent = 'Translating…';
                 toggleBtn.onclick = null;
-                performAutoTranslate(messageBody, sourceMarkdown, afterHtml, langCode, badge, toggleBtn);
+                performAutoTranslate(messageBody, sourceMarkdown, sourceImgs, afterHtml, langCode, badge, toggleBtn);
             };
             return;
         }
 
-        const translatedHtml = markdownishToHtml(translatedMarkdown);
+        const translatedHtml = markdownishToHtml(translatedMarkdown, sourceImgs);
 
         // Translated body = label + translated new-reply + quoted history
         // (untouched). The label keeps the "ENGLISH TRANSLATION:" visual
@@ -885,7 +885,16 @@
         return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    function serializeNodeAsMarkdown(node) {
+    // Image preservation (Phase 2 #9). Each <img> encountered in the
+    // walk is pushed into the supplied `imgs` array as its outerHTML,
+    // and the markdown gets a `{{ztimgN}}` token where N is the array
+    // index. Translators preserve `{{...}}` tokens verbatim (same
+    // mechanism the URL protector relies on), so images survive
+    // translation and `markdownishToHtml` swaps the tokens back to raw
+    // <img> tags. Alt text is left untranslated on purpose — translating
+    // it for screen readers risks ungrammatical phrasing in the target
+    // language and provides little value to sighted agents/customers.
+    function serializeNodeAsMarkdown(node, imgs) {
         let out = '';
         for (const child of node.childNodes) {
             if (child.nodeType === Node.TEXT_NODE) {
@@ -900,7 +909,15 @@
             }
             if (child.nodeType !== Node.ELEMENT_NODE) continue;
             const tag = child.tagName.toLowerCase();
-            const inner = serializeNodeAsMarkdown(child);
+            if (tag === 'img') {
+                // No recursion — <img> is void. Token records the
+                // outerHTML so all attributes (src, alt, width, height,
+                // style) round-trip exactly.
+                imgs.push(child.outerHTML);
+                out += `{{ztimg${imgs.length - 1}}}`;
+                continue;
+            }
+            const inner = serializeNodeAsMarkdown(child, imgs);
             switch (tag) {
                 case 'br':
                     out += '\n';
@@ -955,20 +972,32 @@
         return out;
     }
 
+    // Returns { md, imgs }. `imgs` is the array of <img> outerHTML
+    // strings indexed by the `{{ztimgN}}` tokens embedded in `md`. Pass
+    // both through to `markdownishToHtml(translated, imgs)` after
+    // translating to restore the originals exactly.
     function htmlToMarkdownish(html) {
         const container = document.createElement('div');
         container.innerHTML = html || '';
-        let md = serializeNodeAsMarkdown(container).replace(/\n{3,}/g, '\n\n');
+        const imgs = [];
+        let md = serializeNodeAsMarkdown(container, imgs).replace(/\n{3,}/g, '\n\n');
         // Trim leading/trailing whitespace on each line. After the text-node
         // whitespace collapse above, formatting whitespace near <br>/<p>
         // boundaries shows up as a single space at line edges (e.g.
         // ".\n Alternativt" from "</a>\n<br>\n<b>"). Stripping per-line
         // cleans that up without affecting intentional spaces inside lines.
         md = md.split('\n').map(line => line.trim()).join('\n');
-        return md.trim();
+        return { md: md.trim(), imgs };
     }
 
-    function markdownishToHtml(md) {
+    function markdownishToHtml(md, imgs) {
+        // `imgs` is the array returned alongside the markdown by
+        // htmlToMarkdownish — outerHTML for each <img>, indexed by the
+        // {{ztimgN}} tokens embedded in `md`. Optional; when absent or
+        // empty, image tokens are simply removed from the output (e.g.
+        // a translation produced from text without images).
+        const imgList = Array.isArray(imgs) ? imgs : [];
+
         // Split on blank lines into "blocks". Each block is a group of
         // consecutive lines with no blank line between them (i.e. what the
         // agent typed as a single continuous thought — greeting, body, or
@@ -985,6 +1014,18 @@
             if (inList) { parts.push('</ul>'); inList = false; }
         };
 
+        // Restore {{ztimgN}} tokens to the original <img> outerHTML.
+        // Done *after* escapeHtml below so the token's raw form is what
+        // we replace — escapeHtml leaves `{` and `}` untouched, so the
+        // token text passes through escaping intact and we substitute
+        // unescaped img markup.
+        const restoreImageTokens = (s) => {
+            return s.replace(/\{\{ztimg(\d+)\}\}/g, (match, idx) => {
+                const i = parseInt(idx, 10);
+                return i < imgList.length && imgList[i] != null ? imgList[i] : '';
+            });
+        };
+
         const inlineFmt = (s) => {
             let r = escapeHtml(s);
             // Markdown link. Allow one level of nested parens in the URL
@@ -996,6 +1037,9 @@
             r = r.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             r = r.replace(/__([^_]+)__/g, '<u>$1</u>');
             r = r.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+            // Image-token swap last so the unescaped <img> markup
+            // doesn't get mangled by any of the steps above.
+            r = restoreImageTokens(r);
             return r;
         };
 
@@ -1330,7 +1374,7 @@
             // will treat the whole reply as fresh English.
             if (!replyArea.querySelector('hr')) return;
 
-            const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || ''));
+            const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || '').md);
             // No change in English source → agent is editing the
             // translation portion (above the ---), or CKEditor is doing
             // a markup-only normalization. Either way, don't retranslate.
@@ -1346,7 +1390,7 @@
                 if (autoRetranslate.inProgress) return;
                 if (!replyArea.isConnected) return;
                 if (!replyArea.querySelector('hr')) return;
-                const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || ''));
+                const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || '').md);
                 if (!eng2 || eng2 === autoRetranslate.lastEnglish) return;
                 // findVisibleReplyButton picks up the current toolbar's
                 // button, which may differ from `triggerBtn` after a
@@ -1367,7 +1411,7 @@
         if (!detectedCustomerLanguage) return false;
 
         const replyHtml = replyArea.innerHTML || '';
-        const replyMarkdown = htmlToMarkdownish(replyHtml);
+        const { md: replyMarkdown, imgs: replyImgs } = htmlToMarkdownish(replyHtml);
         const englishSource = extractEnglishSourceFromMarkdown(replyMarkdown);
         if (!englishSource) return false;
 
@@ -1376,6 +1420,7 @@
         ztDbg.groupCollapsed('[zt debug] reply translation pipeline');
         ztDbg.log('1. reply innerHTML:', replyHtml);
         ztDbg.log('2. reply markdown (full):', JSON.stringify(replyMarkdown));
+        ztDbg.log('2a. img tokens captured:', replyImgs.length);
         ztDbg.log('2b. english source:', JSON.stringify(englishSource));
 
         let originalHTML;
@@ -1391,7 +1436,10 @@
             ztDbg.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
 
             const combinedMarkdown = `${translatedMarkdown}\n\n---\n\n${englishSource}`;
-            const combinedHtml = markdownishToHtml(combinedMarkdown);
+            // Pass the same imgs array through to the rehydrator so any
+            // {{ztimgN}} tokens in either the translation or the English
+            // half resolve back to their original <img> outerHTML.
+            const combinedHtml = markdownishToHtml(combinedMarkdown, replyImgs);
             ztDbg.log('4. combined HTML (about to inject):', combinedHtml);
 
             const ok = await replaceReplyText(replyArea, combinedMarkdown, combinedHtml);
@@ -1503,7 +1551,7 @@
                 alert('Could not find the active reply area.');
                 return;
             }
-            const replyMarkdown = htmlToMarkdownish(replyArea.innerHTML || '');
+            const { md: replyMarkdown } = htmlToMarkdownish(replyArea.innerHTML || '');
             if (!replyMarkdown) {
                 alert('Please write your reply first.');
                 return;
@@ -1677,7 +1725,7 @@
         // returns false silently and the agent just gets the new flag.
         const replyArea = findVisibleComposer();
         if (!replyArea) return;
-        const replyMarkdown = htmlToMarkdownish(replyArea.innerHTML || '');
+        const { md: replyMarkdown } = htmlToMarkdownish(replyArea.innerHTML || '');
         const englishSource = extractEnglishSourceFromMarkdown(replyMarkdown);
         if (!englishSource) return;
         // Reset auto-retranslate's last-translated marker so the new

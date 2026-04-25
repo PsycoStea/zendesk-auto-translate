@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.36 (current)
+### v1.0.37 (current)
+- **Images preserved through translation.** Embedded `<img>` tags in customer messages and agent replies now survive the full HTML → markdown → translate → HTML roundtrip with every attribute intact (`src`, `alt`, `width`, `height`, inline `style`). Mechanism mirrors the existing URL-token protector: during serialization, each image is replaced with a `{{ztimgN}}` token while its `outerHTML` is captured into a per-call array; the token rides through the translator as plain text (Google and LibreTranslate both preserve the `{{...}}` shape verbatim, same way they preserve `{{ticket.requester.first_name}}` and `{{ztlinkN}}`); on rehydration, `markdownishToHtml(md, imgs)` swaps the tokens back to the original markup. `htmlToMarkdownish` now returns `{md, imgs}` instead of a bare string — change-detection callers extract `.md`, full-roundtrip callers thread both through. Alt text is intentionally not translated (low value to sighted users; non-zero risk of ungrammatical phrasing in the target language).
+
+### v1.0.36
 - **Language-override dropdown on the reply flag.** A small `▾` caret button now sits flush right of the flag pill. Clicking it opens a fixed-position dropdown listing every supported language with its flag — 24 entries, alphabetical by display name, scrollable, with the currently active language highlighted. Selecting one writes the choice through to the ticket-wide language lock (so future replies in this ticket default to the new language and the per-ticket lock survives reloads), updates the flag emoji, and — if the composer has English content — immediately retranslates to the new target. The menu closes on outside click, Escape, scroll, or a second click of the caret. Built as a fixed-position element appended to `<body>` rather than nested inside the toolbar so it floats above any Zendesk z-index/`overflow:hidden` layer; the menu flips upward when there's not enough room below the caret. Auto-retranslate's last-translated marker is reset on language change so the new run isn't filtered as a no-change repeat.
 
 ### v1.0.35
