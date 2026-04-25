@@ -123,6 +123,26 @@
         } else if (request.action === 'settingsUpdated') {
             // storage.onChanged handles the actual refresh; just acknowledge.
             sendResponse({ success: true });
+        } else if (request.action === 'shortcut-translate-reply') {
+            // Keyboard shortcut from background.js (default Cmd/Ctrl+Shift+X).
+            // Find the reply-translate button in the visible ticket's
+            // toolbar and click it. addReplyTranslateButton() is idempotent —
+            // calling it first ensures the button exists if scanAndAttach
+            // hasn't placed it yet (e.g. agent hit the shortcut before the
+            // first poll tick after a ticket switch).
+            if (!isEnabled) {
+                sendResponse({ success: false, reason: 'disabled' });
+                return;
+            }
+            addReplyTranslateButton();
+            const btn = findVisibleReplyButton();
+            if (btn) {
+                btn.click();
+                sendResponse({ success: true });
+            } else {
+                showToast('No customer language detected yet — open a non-English ticket first.', 'warn');
+                sendResponse({ success: false, reason: 'no-button' });
+            }
         } else if (request.action === 'clearCache') {
             // Popup's Clear button. Drop the in-memory cache + counters and
             // cancel any pending debounced write so it can't revive them,
@@ -1030,6 +1050,18 @@
             if (l && l !== 'en' && l !== 'unknown' && isElementVisible(m)) return l;
         }
         return null;
+    }
+
+    // Find our reply-translate button inside the currently-visible ticket's
+    // toolbar. Zendesk keeps multiple tickets in the same DOM — walking
+    // the visible Enhance toolbar is authoritative, while window.ztReplyButton
+    // may point at a button in a hidden ticket from a previous scan.
+    function findVisibleReplyButton() {
+        const enhance = findVisibleEnhanceButton();
+        if (!enhance) return null;
+        const toolbar = enhance.closest('[role="toolbar"]');
+        if (!toolbar) return null;
+        return toolbar.querySelector('.zt-reply-translate-btn');
     }
 
     function findVisibleEnhanceButton() {

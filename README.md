@@ -10,7 +10,7 @@ Internal Chrome extension for the **Mac Group Global** customer service team. Au
 ## Features
 
 - Language badge and "Translate to English" button on non-English customer messages.
-- Flag button in the reply toolbar that translates your English reply back into the customer's detected language.
+- Flag button in the reply toolbar that translates your English reply back into the customer's detected language. Also bindable to `Cmd+Shift+X` (macOS) / `Ctrl+Shift+X` (Windows/Linux), customizable at `chrome://extensions/shortcuts`.
 - Reply translation uses CKEditor-aware paste strategies so text actually sticks (see v1.0.7 notes below).
 - Translation memory: up to 2000 recent translations cached locally per browser, LRU-evicted. "Clear cache" button in the popup.
 - Two selectable providers from the popup:
@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.30 (current)
+### v1.0.31 (current)
+- **Keyboard shortcut for reply translation.** `Cmd+Shift+X` (macOS) / `Ctrl+Shift+X` (Windows/Linux) triggers the reply-translate flag on the currently-visible ticket, the same as a click. Registered via the Manifest V3 `commands` API; agents can remap or disable it at `chrome://extensions/shortcuts` without any extension change. The background service worker catches the keypress and forwards a `shortcut-translate-reply` message to the active Zendesk tab's content script. If no non-English ticket is open (so no flag button is present), a toast explains what's missing instead of silently doing nothing. Windows default is `Ctrl+Shift+X` rather than `Ctrl+Shift+T` to avoid colliding with Chrome's built-in "reopen closed tab".
+
+### v1.0.30
 - **Cache upgrade: 20× capacity + true LRU.** `CACHE_MAX` raised from 100 to 2000 entries. v1.0.29's telemetry on two agents over 4 days showed hit rates of 79% and 86% at the old 100-entry cap — the cache was constantly evicting hot boilerplate. 2000 entries ≈ 3MB of storage, comfortably under Chrome's 5MB default quota, and leaves room for recurring templates and greetings to stay resident. Eviction is now proper LRU: every cache hit bumps the key to the end of the insertion order (via delete + reassign), so the oldest-accessed entry — not the oldest-inserted — is what falls out on the next miss.
 - **Clear cache button in the popup.** Small button under the cache status row. Wipes `translationMemory` and resets the hit/total counters in `chrome.storage.local`, then broadcasts a `clearCache` message to every open Zendesk tab so their in-memory copies don't race stale values back in on the next translate call. Useful after a cache-version bump, or just to reset the hit-rate stat for measurement.
 - **Debounced memory writes.** `translationMemory` writes piggy-back on the same 1s coalescing timer that already batched the `cacheStats` writes, instead of a fresh `chrome.storage.local.set` on every miss. A burst of translations on ticket load now produces a single storage write per second regardless of cache activity.

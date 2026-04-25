@@ -38,7 +38,9 @@ Update each item's emoji as work progresses, and the phase headers at the top of
 
 Small, localized changes. Each ships as its own version so the team can pull updates incrementally during this phase. No dependencies between Phase 1 items.
 
-### 1. ⬜ Configurable keyboard shortcut for reply translate (from #1)
+### 1. ✅ Configurable keyboard shortcut for reply translate (from #1)
+
+Shipped in v1.0.31. Windows default is `Ctrl+Shift+X` (the earlier open question about `Ctrl+Shift+T` overriding Chrome's reopen-closed-tab was resolved by picking a non-conflicting key).
 
 **Effort:** ~45 min
 
@@ -51,9 +53,6 @@ Small, localized changes. Each ships as its own version so the team can pull upd
 - Add `"commands"` section to `manifest.json` with `suggested_key` per platform.
 - Register a handler in `background.js` that `chrome.tabs.sendMessage`s the active Zendesk tab with `{action: 'shortcut-translate-reply'}`.
 - `content.js` listener triggers `findVisibleReplyButton().click()`.
-
-**Open questions:**
-- ⚠ `Ctrl+Shift+T` is Chrome's own "reopen closed tab" shortcut on Windows. Chrome extension shortcuts **do** override built-in ones, but flag this in the team's onboarding doc so they know that reopening closed tabs moves to the context menu while the extension is installed. Or we pick a different Windows default. Flagged for your decision when this item starts.
 
 ---
 
@@ -323,7 +322,6 @@ The largest single feature. Split into three incremental releases so something s
 
 - **(#14) DOM sample for customer sidebar** — need outerHTML of the shipping/billing address block so I can write reliable country-code selectors. Defer until Phase 2.
 - **(#9) Service worker keep-alive symptoms** — have you observed dropped commands / toggle messages not reaching tabs? If no, skip this item.
-- **(#1) Windows default shortcut conflict** — `Ctrl+Shift+T` overrides Chrome's "reopen closed tab". Acceptable to document in onboarding, or prefer a non-conflicting default?
 
 ---
 

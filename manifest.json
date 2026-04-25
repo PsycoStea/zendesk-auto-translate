@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
@@ -33,6 +33,15 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "translate-reply": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X",
+        "mac": "Command+Shift+X"
+      },
+      "description": "Translate the current reply to the customer's language"
+    }
   },
   "icons": {
     "16": "icon16.png",
