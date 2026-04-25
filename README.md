@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.38 (current)
+### v1.0.39 (current)
+- **Fix dropdown override getting clobbered by polling.** Symptom from the field: agent picks a new language via the caret dropdown, the reply correctly retranslates once, then on the next edit below `---` the auto-retranslate snaps back to the *original* ticket language — and stays there. Root cause: `addReplyTranslateButton()` runs every 1.5s via the poll backup and was reading `languageOfVisibleTicket()` (which scans customer messages' `data-zt-lang`) as the source of truth. Those attributes still hold the originally-detected language; they don't move when the dropdown override updates the ticket lock. Fix: the reconciliation now checks `ticketLanguages[ticketId]` first and treats it as authoritative when present, falling back to the per-message scan only when no lock has been written yet (e.g. the very first scan tick before any customer message has been processed). The dropdown override stays sticky across poll ticks, and the auto-retranslate that follows uses the override target as expected.
+
+### v1.0.38
 - **Language-override dropdown bugfixes (v1.0.36 fallout).** Four issues that surfaced once the dropdown hit real Zendesk traffic:
   - **Caret stacked under the flag instead of beside it.** The wrapper inherited `.sc-k83b6s-1.jXsvnN` from Zendesk's toolbar; that class evidently switched to `flex-direction: column` in the current Zendesk build, so our two children stacked vertically. `.zt-reply-wrapper` now forces `display: inline-flex; flex-direction: row; align-items: center` with `!important` to override Zendesk's class regardless of which way they flip it.
   - **Caret too small (read as "screen dust").** Bumped the glyph from `▾` (BLACK DOWN-POINTING SMALL TRIANGLE) at 11px to `▼` (full-size BLACK DOWN-POINTING TRIANGLE) at 13px / weight 700, with wider min-width and padding.

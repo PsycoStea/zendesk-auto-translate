@@ -1469,19 +1469,42 @@
     function addReplyTranslateButton() {
         if (!isEnabled) return;
 
-        // Ground truth for "what language should this reply button translate
-        // to" is whatever the currently-visible customer message is in. The
-        // global is useful as a fast path but can be stale after a ticket
-        // switch — always reconcile with the visible-ticket language first.
-        const visibleLang = languageOfVisibleTicket();
-        if (visibleLang) {
-            if (visibleLang !== detectedCustomerLanguage) {
-                detectedCustomerLanguage = visibleLang;
+        // Ground truth precedence (v1.0.39):
+        //
+        //   1. Ticket-wide lock from chrome.storage.local.ticketLanguages.
+        //      This is authoritative when present — set by first detection
+        //      OR by an explicit dropdown override. Without checking it
+        //      here, the 1.5s polling tick would clobber a freshly-applied
+        //      dropdown override by reading the original message's
+        //      data-zt-lang and snapping detectedCustomerLanguage back
+        //      to the auto-detected language.
+        //
+        //   2. Visible-ticket message scan (languageOfVisibleTicket) for
+        //      the case where no lock has been written yet — the very
+        //      first scan tick before processCustomerMessage has run.
+        //
+        //   3. Existing detectedCustomerLanguage if neither of the above
+        //      yields anything (shouldn't happen in steady state, but
+        //      avoids tearing down a button mid-render).
+        const ticketId = getTicketIdFromUrl();
+        const lockedLang = ticketId ? ticketLanguages[ticketId] : null;
+
+        if (lockedLang) {
+            if (lockedLang !== detectedCustomerLanguage) {
+                detectedCustomerLanguage = lockedLang;
                 updateReplyButton();
             }
-        } else if (!detectedCustomerLanguage) {
-            // No language known yet and none visible — nothing to do this tick.
-            return;
+        } else {
+            const visibleLang = languageOfVisibleTicket();
+            if (visibleLang) {
+                if (visibleLang !== detectedCustomerLanguage) {
+                    detectedCustomerLanguage = visibleLang;
+                    updateReplyButton();
+                }
+            } else if (!detectedCustomerLanguage) {
+                // No language known yet and none visible — nothing to do this tick.
+                return;
+            }
         }
 
         if (!detectedCustomerLanguage || detectedCustomerLanguage === 'en') return;
