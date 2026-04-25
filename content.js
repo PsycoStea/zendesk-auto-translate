@@ -1116,15 +1116,31 @@
     }
 
     function contentMatches(replyArea, translatedMarkdown) {
-        // Normalize whitespace on both sides before comparing. The target
-        // markdown uses '\n' for adjacent paragraphs and '\n\n' for
-        // blank-line separators, but Chrome's innerText emits '\n\n'
-        // between every pair of block elements — including adjacent <p>s —
-        // so a literal substring check would always fail at the first
-        // paragraph boundary even when the text landed correctly.
+        // Normalize before comparing. Two transforms beyond plain
+        // whitespace collapse:
+        //
+        //   1. Strip `---` separator lines. The markdown encodes the
+        //      bilingual separator as `\n\n---\n\n`, but markdownishToHtml
+        //      turns it into a real `<hr>` tag that produces zero
+        //      innerText. Without this strip, target = "Hallo --- Hello"
+        //      vs current = "Hallo Hello" → mismatch on every short
+        //      reply (≤40 chars), every strategy reports failure, the
+        //      caller sees `ok=false` even though the text visually
+        //      landed, and the auto-retranslate `lastEnglish` marker
+        //      never advances. Found via v1.0.41 diagnostic logs.
+        //
+        //   2. Strip `{{ztimgN}}` image tokens (Phase 2 #9). They
+        //      rehydrate to `<img>` which has no innerText, same shape
+        //      of false-negative as `---`.
+        //
+        // Both transforms apply to the target side only — current is
+        // already post-render so neither artifact is present there.
         const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+        const stripInvisibles = (s) => (s || '')
+            .replace(/(?:^|\n)---(?=\n|$)/g, '')
+            .replace(/\{\{ztimg\d+\}\}/g, '');
         const current = norm(replyArea.innerText || replyArea.textContent);
-        const target = norm(stripMarkdownSyntax(translatedMarkdown));
+        const target = norm(stripInvisibles(stripMarkdownSyntax(translatedMarkdown)));
         if (!target) return false;
         if (current === target) return true;
         const head = target.slice(0, Math.min(40, target.length));
@@ -1407,7 +1423,7 @@
         const handler = (ev) => {
             if (!isEnabled) return;
             if (autoRetranslate.inProgress) {
-                console.log('[zt-auto] skip: inProgress', { type: ev.type });
+                ztDbg.log('[zt-auto] skip: inProgress', { type: ev.type });
                 return;
             }
             const composer = ev.target && ev.target.closest
@@ -1415,7 +1431,7 @@
                 : null;
             if (!composer) return;  // common: events from outside the composer
             if (!isElementVisible(composer)) {
-                console.log('[zt-auto] skip: composer not visible', { type: ev.type });
+                ztDbg.log('[zt-auto] skip: composer not visible', { type: ev.type });
                 return;
             }
             if (!composer.querySelector('hr')) {
@@ -1426,7 +1442,7 @@
             }
 
             const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(composer.innerHTML || '').md);
-            console.log('[zt-auto] event', {
+            ztDbg.log('[zt-auto] event', {
                 type: ev.type,
                 detectedLang: detectedCustomerLanguage,
                 eng: eng ? eng.slice(0, 60) : eng,
@@ -1439,27 +1455,27 @@
             autoRetranslate.timer = setTimeout(() => {
                 autoRetranslate.timer = null;
                 if (autoRetranslate.inProgress) {
-                    console.log('[zt-auto] debounce skip: inProgress');
+                    ztDbg.log('[zt-auto] debounce skip: inProgress');
                     return;
                 }
                 const live = findVisibleComposer();
                 if (!live || !live.isConnected) {
-                    console.log('[zt-auto] debounce skip: composer gone');
+                    ztDbg.log('[zt-auto] debounce skip: composer gone');
                     return;
                 }
                 if (!live.querySelector('hr')) {
-                    console.log('[zt-auto] debounce skip: no <hr>');
+                    ztDbg.log('[zt-auto] debounce skip: no <hr>');
                     return;
                 }
                 const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(live.innerHTML || '').md);
                 if (!eng2 || eng2 === autoRetranslate.lastEnglish) {
-                    console.log('[zt-auto] debounce skip: eng2 matches lastEnglish', {
+                    ztDbg.log('[zt-auto] debounce skip: eng2 matches lastEnglish', {
                         eng2: eng2 ? eng2.slice(0, 60) : eng2,
                         lastEnglish: autoRetranslate.lastEnglish ? autoRetranslate.lastEnglish.slice(0, 60) : autoRetranslate.lastEnglish,
                     });
                     return;
                 }
-                console.log('[zt-auto] FIRE runReplyTranslate', {
+                ztDbg.log('[zt-auto] FIRE runReplyTranslate', {
                     eng2: eng2.slice(0, 60),
                     targetLang: detectedCustomerLanguage,
                 });
@@ -1492,11 +1508,11 @@
     // equivalent silently.
     async function runReplyTranslate(replyArea, triggerBtn) {
         if (autoRetranslate.inProgress) {
-            console.log('[zt-auto] runReplyTranslate skip: inProgress');
+            ztDbg.log('[zt-auto] runReplyTranslate skip: inProgress');
             return false;
         }
         if (!detectedCustomerLanguage) {
-            console.log('[zt-auto] runReplyTranslate skip: no detectedCustomerLanguage');
+            ztDbg.log('[zt-auto] runReplyTranslate skip: no detectedCustomerLanguage');
             return false;
         }
 
@@ -1504,10 +1520,10 @@
         const { md: replyMarkdown, imgs: replyImgs } = htmlToMarkdownish(replyHtml);
         const englishSource = extractEnglishSourceFromMarkdown(replyMarkdown);
         if (!englishSource) {
-            console.log('[zt-auto] runReplyTranslate skip: no englishSource');
+            ztDbg.log('[zt-auto] runReplyTranslate skip: no englishSource');
             return false;
         }
-        console.log('[zt-auto] runReplyTranslate start', { englishSource: englishSource.slice(0, 60), targetLang: detectedCustomerLanguage });
+        ztDbg.log('[zt-auto] runReplyTranslate start', { englishSource: englishSource.slice(0, 60), targetLang: detectedCustomerLanguage });
 
         autoRetranslate.inProgress = true;
 
@@ -1546,7 +1562,7 @@
                 autoRetranslate.lastEnglish = englishSource;
                 attachAutoRetranslateListener(replyArea, triggerBtn);
             }
-            console.log('[zt-auto] runReplyTranslate end', { ok, lastEnglish: autoRetranslate.lastEnglish.slice(0, 60) });
+            ztDbg.log('[zt-auto] runReplyTranslate end', { ok, lastEnglish: autoRetranslate.lastEnglish.slice(0, 60) });
 
             if (triggerBtn) {
                 triggerBtn.innerHTML = ok ? '✓' : '⚠️';
@@ -1855,7 +1871,7 @@
     }
 
     async function selectLanguageOverride(code) {
-        console.log('[zt-auto] selectLanguageOverride start', { code, prev: detectedCustomerLanguage });
+        ztDbg.log('[zt-auto] selectLanguageOverride start', { code, prev: detectedCustomerLanguage });
         // Update the in-memory state and the ticket-wide lock so future
         // messages and reply translations default to the override. Also
         // refresh any open reply buttons so the flag emoji matches.
@@ -1881,9 +1897,9 @@
         // language run isn't filtered out as a no-change repeat of the
         // previous translation.
         autoRetranslate.lastEnglish = '';
-        console.log('[zt-auto] selectLanguageOverride about to runReplyTranslate', { code, englishSource: englishSource.slice(0, 60) });
+        ztDbg.log('[zt-auto] selectLanguageOverride about to runReplyTranslate', { code, englishSource: englishSource.slice(0, 60) });
         await runReplyTranslate(replyArea, findVisibleReplyButton());
-        console.log('[zt-auto] selectLanguageOverride done', { lastEnglish: autoRetranslate.lastEnglish.slice(0, 60), detectedLang: detectedCustomerLanguage });
+        ztDbg.log('[zt-auto] selectLanguageOverride done', { lastEnglish: autoRetranslate.lastEnglish.slice(0, 60), detectedLang: detectedCustomerLanguage });
     }
     
     function updateButtonContent(btn) {
