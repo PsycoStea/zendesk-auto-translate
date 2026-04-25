@@ -125,6 +125,23 @@
             settings.libretranslateApiKey = result.libretranslateApiKey || '';
             ztDebug = !!result.ztDebug;
             ticketLanguages = (result.ticketLanguages && typeof result.ticketLanguages === 'object') ? result.ticketLanguages : {};
+            // v1.0.40 migration: strip any 'en' entries written by
+            // v1.0.34–v1.0.39's auto-detection. Those entries lock the
+            // reply flag to the English emoji even on tickets whose later
+            // customer messages are in another language, because Phase 1
+            // #6's lock is permanent. New code skips writing 'en' (see
+            // processCustomerMessage); this cleans up the historical
+            // damage on first load after upgrade.
+            {
+                let migrated = false;
+                for (const tid of Object.keys(ticketLanguages)) {
+                    if (ticketLanguages[tid] === 'en') {
+                        delete ticketLanguages[tid];
+                        migrated = true;
+                    }
+                }
+                if (migrated) persistTicketLanguages();
+            }
             if (result.cacheStats && typeof result.cacheStats === 'object') {
                 cacheStats.hits = Number(result.cacheStats.hits) || 0;
                 cacheStats.total = Number(result.cacheStats.total) || 0;
@@ -704,14 +721,25 @@
             } else {
                 langCode = await detectLanguage(textContent);
                 messageElement.dataset.ztLang = langCode;
-                // Persist only confident detections from the visible
-                // ticket — 'unknown' means the providers couldn't decide
-                // and is not worth caching.
+                // Persist only confident, non-English detections from the
+                // visible ticket. 'unknown' means the providers couldn't
+                // decide. 'en' is excluded on purpose (v1.0.40): a short
+                // first message — a number, an address, "ok thanks" —
+                // detects as English even on tickets whose later messages
+                // are clearly in another language. Caching 'en' here
+                // would lock the ticket out of further detection forever
+                // (Phase 1 #6 lock is permanent), and the reply flag
+                // would freeze on the English flag emoji. Skipping 'en'
+                // means subsequent customer messages get re-detected
+                // until a non-English one wins; the per-message
+                // data-zt-lang cache still avoids redundant API calls
+                // for messages we've already seen.
                 if (
                     visible
                     && ticketId
                     && langCode
                     && langCode !== 'unknown'
+                    && langCode !== 'en'
                     && ticketLanguages[ticketId] !== langCode
                 ) {
                     ticketLanguages[ticketId] = langCode;
@@ -1314,15 +1342,16 @@
 
     const AUTO_RETRANSLATE_DEBOUNCE_MS = 2000;
 
-    // Module-level state for auto-retranslate. Only ever one composer is
-    // visibly active at a time (Zendesk multi-ticket DOM hides the rest),
-    // so a single shared object is enough; clearAutoRetranslateState()
-    // resets it on toggle-off and ticket switches.
+    // Module-level state for auto-retranslate. v1.0.40: removed the
+    // per-composer reference — the input listener is now delegated at
+    // the document level (see installAutoRetranslateListener) so it
+    // survives Zendesk's React re-renders that occasionally swap the
+    // composer DOM node between translations.
     const autoRetranslate = {
-        composer: null,        // composer we attached the input listener to
         timer: null,           // pending debounce timer
         lastEnglish: '',       // last English source we successfully translated
         inProgress: false,     // guard against re-entry / our own injection events
+        installed: false,      // document-level listener attached?
     };
 
     function clearAutoRetranslateState() {
@@ -1330,9 +1359,11 @@
             clearTimeout(autoRetranslate.timer);
             autoRetranslate.timer = null;
         }
-        autoRetranslate.composer = null;
         autoRetranslate.lastEnglish = '';
         autoRetranslate.inProgress = false;
+        // Note: we don't tear down the document-level listener here. It
+        // self-gates on isEnabled and on the visible composer's content,
+        // so re-enabling or switching tickets just resumes naturally.
     }
 
     // Pull "everything after the last `---` separator" out of the reply's
@@ -1349,32 +1380,41 @@
         return (lastSepEnd >= 0 ? md.slice(lastSepEnd) : md).trim();
     }
 
-    // Idempotent: attaches one input listener per composer. The listener
-    // fires often (every keystroke) and is cheap — heavy work is gated
-    // behind the debounce timer, which only fires once 2s after the last
-    // change.
-    function attachAutoRetranslateListener(replyArea, triggerBtn) {
-        if (autoRetranslate.composer === replyArea) return;
+    // v1.0.40: single document-level delegated listener instead of
+    // per-composer attachment. Zendesk's React occasionally replaces the
+    // composer's contenteditable element wholesale between translations
+    // (observed after a synthetic-paste injection on some ticket types),
+    // and a listener bound to the previous element silently stops
+    // firing. Delegating to `document` and resolving the composer at
+    // event time via closest() makes this robust to those re-renders
+    // without us needing to track DOM changes ourselves.
+    //
+    // Idempotent: the `installed` flag means re-calls (init, ticket
+    // switch, etc.) leave the existing listener in place. Cost per
+    // keystroke is tiny — a closest() call and a quick filter; the
+    // expensive work (htmlToMarkdownish, translate) is gated behind the
+    // 2s debounce.
+    function installAutoRetranslateListener() {
+        if (autoRetranslate.installed) return;
+        autoRetranslate.installed = true;
 
-        // Switching to a new composer (e.g. ticket switch). Drop any
-        // pending timer for the previous one — it would either no-op
-        // (composer detached) or worse, fire a translate against a stale
-        // reference.
-        if (autoRetranslate.timer) {
-            clearTimeout(autoRetranslate.timer);
-            autoRetranslate.timer = null;
-        }
-        autoRetranslate.composer = replyArea;
-
-        replyArea.addEventListener('input', () => {
+        const handler = (ev) => {
+            if (!isEnabled) return;
             // Skip events fired by our own synthetic-paste injection.
             if (autoRetranslate.inProgress) return;
-            // Separator gone → agent deleted the line. Per spec: don't
-            // auto-retranslate; wait for the next explicit click which
-            // will treat the whole reply as fresh English.
-            if (!replyArea.querySelector('hr')) return;
+            // Only care about input events from a Zendesk reply composer.
+            const composer = ev.target && ev.target.closest
+                ? ev.target.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]')
+                : null;
+            if (!composer) return;
+            // Multi-ticket DOM: ignore composers that aren't visible.
+            if (!isElementVisible(composer)) return;
+            // Separator gone → agent deleted the line, or no translation
+            // has happened yet. Per spec: don't auto-retranslate; wait
+            // for the next explicit click.
+            if (!composer.querySelector('hr')) return;
 
-            const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || '').md);
+            const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(composer.innerHTML || '').md);
             // No change in English source → agent is editing the
             // translation portion (above the ---), or CKEditor is doing
             // a markup-only normalization. Either way, don't retranslate.
@@ -1385,19 +1425,34 @@
             if (autoRetranslate.timer) clearTimeout(autoRetranslate.timer);
             autoRetranslate.timer = setTimeout(() => {
                 autoRetranslate.timer = null;
-                // Re-check all guards — composer may have been swapped or
-                // the agent may have undone their edit during the wait.
                 if (autoRetranslate.inProgress) return;
-                if (!replyArea.isConnected) return;
-                if (!replyArea.querySelector('hr')) return;
-                const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || '').md);
+                // Re-resolve the composer — the one we saw at debounce
+                // start may have been re-rendered. findVisibleComposer
+                // picks the currently-visible one.
+                const live = findVisibleComposer();
+                if (!live || !live.isConnected) return;
+                if (!live.querySelector('hr')) return;
+                const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(live.innerHTML || '').md);
                 if (!eng2 || eng2 === autoRetranslate.lastEnglish) return;
-                // findVisibleReplyButton picks up the current toolbar's
-                // button, which may differ from `triggerBtn` after a
-                // React re-render.
-                runReplyTranslate(replyArea, findVisibleReplyButton() || triggerBtn);
+                runReplyTranslate(live, findVisibleReplyButton());
             }, AUTO_RETRANSLATE_DEBOUNCE_MS);
-        });
+        };
+
+        // Capture phase so we beat any inner CKEditor handlers that
+        // might stopPropagation. `keyup` is a backup in case `input`
+        // fires asynchronously (some IME/composition paths) — the
+        // handler is idempotent against duplicate triggers (debounce
+        // collapses them).
+        document.addEventListener('input', handler, true);
+        document.addEventListener('keyup', handler, true);
+    }
+
+    // Kept as a thin no-op wrapper so the existing call sites in
+    // runReplyTranslate keep their meaning — "we just translated
+    // successfully, make sure auto-retranslate is wired up". Now this
+    // just installs the global listener if it isn't already.
+    function attachAutoRetranslateListener(/* replyArea, triggerBtn */) {
+        installAutoRetranslateListener();
     }
 
     // The single entry point both the click handler and the
@@ -1659,13 +1714,17 @@
         menu.className = 'zt-reply-lang-menu';
         menu.setAttribute('role', 'listbox');
 
-        // 24-language list: stable alphabetical order by display name so
+        // Language list: stable alphabetical order by display name so
         // the agent can scan visually. Static list is fine at this size —
         // see the Phase 2 #8 spec note where we deferred the typeahead
-        // search question.
-        const codes = Object.keys(languageInfo).sort((a, b) =>
-            languageInfo[a].name.localeCompare(languageInfo[b].name)
-        );
+        // search question. v1.0.40: 'en' is filtered out — English is
+        // the agent's native language, not a translation target. (The
+        // reply flag itself is hidden when detectedCustomerLanguage is
+        // 'en' anyway, but a stale flag from a tab-switch race could
+        // otherwise show 'en' in the dropdown.)
+        const codes = Object.keys(languageInfo)
+            .filter(c => c !== 'en')
+            .sort((a, b) => languageInfo[a].name.localeCompare(languageInfo[b].name));
         for (const code of codes) {
             const info = languageInfo[code];
             const item = document.createElement('div');
@@ -1868,6 +1927,11 @@
         teardownObservers();
 
         console.log('Zendesk Auto Translator initializing...');
+
+        // Install the document-level auto-retranslate listener once.
+        // It self-gates on isEnabled, so leaving it attached across
+        // toggle cycles is safe and cheaper than churning attach/detach.
+        installAutoRetranslateListener();
 
         mainObserver = new MutationObserver(scanAndAttach);
         mainObserver.observe(document.body, {
