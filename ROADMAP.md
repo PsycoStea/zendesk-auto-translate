@@ -173,7 +173,9 @@ Shipped in v1.0.35. After the first translation lands, an `input` listener on th
 
 ---
 
-### 8. ⬜ Language-override dropdown on reply flag (from #5)
+### 8. ✅ Language-override dropdown on reply flag (from #5)
+
+Shipped in v1.0.36. `▾` caret next to the reply flag opens a fixed-position menu listing all 24 supported languages alphabetically. Selecting one writes through to the ticket-wide language lock (Phase 1 #6) and immediately retranslates the current reply if there's English content. Static scrolling list (no typeahead) — sufficient for 24 entries; the open question is resolved.
 
 **Effort:** ~2 hours
 

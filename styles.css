@@ -134,3 +134,61 @@
 .zt-toast-success { background: #038153; }
 .zt-toast-warn    { background: #ad5d00; }
 .zt-toast-error   { background: #cc3340; }
+
+/*
+ * Language-override caret + dropdown for the reply flag (Phase 2 #8).
+ * Caret sits flush right of the flag button; menu pops below, fixed-
+ * position so it floats above any Zendesk z-index layer and isn't
+ * clipped by the toolbar's overflow.
+ */
+.zt-reply-lang-caret {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px 6px;
+    color: #2f3941;
+    font-size: 11px;
+    height: 32px;
+    min-width: 18px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.zt-reply-lang-caret:hover { background-color: #f5f5f5; }
+.zt-reply-lang-caret[aria-expanded="true"] { background-color: #e5e7eb; }
+
+.zt-reply-lang-menu {
+    position: fixed;
+    z-index: 99999;
+    background: white;
+    border: 1px solid #d8dcde;
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    max-height: 280px;
+    overflow-y: auto;
+    min-width: 180px;
+    padding: 4px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.zt-reply-lang-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #2f3941;
+    user-select: none;
+    line-height: 1.2;
+}
+.zt-reply-lang-item:hover { background-color: #f3f4f6; }
+.zt-reply-lang-item-active {
+    background-color: #eff6ff;
+    font-weight: 600;
+}
+.zt-reply-lang-item .zt-reply-lang-flag {
+    font-size: 18px;
+    line-height: 1;
+}

@@ -1515,12 +1515,176 @@
 
             await runReplyTranslate(replyArea, translateBtn);
         });
-        
+
+        // Language-override caret (Phase 2 #8). Sits flush right of the
+        // flag; click opens a dropdown of all supported languages.
+        // Selecting one updates the ticket-wide language lock and, when
+        // there's English content, immediately retranslates.
+        const caretBtn = document.createElement('button');
+        caretBtn.className = 'zt-reply-lang-caret';
+        caretBtn.type = 'button';
+        caretBtn.innerHTML = '▾';
+        caretBtn.setAttribute('aria-label', 'Change reply language');
+        caretBtn.setAttribute('aria-haspopup', 'listbox');
+        caretBtn.setAttribute('aria-expanded', 'false');
+        caretBtn.title = 'Change reply language';
+        caretBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleLanguageMenu(caretBtn);
+        });
+
         buttonWrapper.appendChild(translateBtn);
+        buttonWrapper.appendChild(caretBtn);
         toolbar.appendChild(buttonWrapper);
-        
+
         // Store reference for updates
         window.ztReplyButton = translateBtn;
+    }
+
+    // ============================================
+    // LANGUAGE-OVERRIDE DROPDOWN (Phase 2 #8)
+    // ============================================
+    //
+    // The caret to the right of the flag opens a fixed-position menu of
+    // every supported language. Selecting one writes through to the
+    // ticket-wide lock so future messages in this ticket inherit the
+    // override automatically. Menu is rebuilt on each open so the active
+    // highlight + ticket lock stay in sync. Closes on outside click,
+    // Escape, scroll, or a second click of the caret.
+
+    let openLangMenuEl = null;
+    let openLangMenuCleanup = null;
+
+    function closeLanguageMenu() {
+        if (openLangMenuCleanup) {
+            try { openLangMenuCleanup(); } catch (_) {}
+            openLangMenuCleanup = null;
+        }
+        if (openLangMenuEl) {
+            openLangMenuEl.remove();
+            openLangMenuEl = null;
+        }
+        // Reset every caret's aria-expanded; there's normally only one
+        // visible, but the cleanup is cheap.
+        document.querySelectorAll('.zt-reply-lang-caret[aria-expanded="true"]')
+            .forEach(b => b.setAttribute('aria-expanded', 'false'));
+    }
+
+    function toggleLanguageMenu(caretBtn) {
+        if (openLangMenuEl) {
+            closeLanguageMenu();
+            return;
+        }
+        openLanguageMenu(caretBtn);
+    }
+
+    function openLanguageMenu(caretBtn) {
+        const menu = document.createElement('div');
+        menu.className = 'zt-reply-lang-menu';
+        menu.setAttribute('role', 'listbox');
+
+        // 24-language list: stable alphabetical order by display name so
+        // the agent can scan visually. Static list is fine at this size —
+        // see the Phase 2 #8 spec note where we deferred the typeahead
+        // search question.
+        const codes = Object.keys(languageInfo).sort((a, b) =>
+            languageInfo[a].name.localeCompare(languageInfo[b].name)
+        );
+        for (const code of codes) {
+            const info = languageInfo[code];
+            const item = document.createElement('div');
+            item.className = 'zt-reply-lang-item';
+            if (code === detectedCustomerLanguage) {
+                item.classList.add('zt-reply-lang-item-active');
+            }
+            item.setAttribute('role', 'option');
+            item.setAttribute('aria-selected', code === detectedCustomerLanguage ? 'true' : 'false');
+            item.innerHTML =
+                `<span class="zt-reply-lang-flag">${info.flag}</span>` +
+                `<span>${info.name}</span>`;
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                selectLanguageOverride(code);
+                closeLanguageMenu();
+            });
+            menu.appendChild(item);
+        }
+
+        document.body.appendChild(menu);
+
+        // Position under the caret. Fixed positioning so the menu rides
+        // above any Zendesk overflow:hidden wrapper. If the caret is
+        // closer to the bottom of the viewport than the top, flip the
+        // menu upward so it doesn't get clipped.
+        const rect = caretBtn.getBoundingClientRect();
+        const menuHeight = Math.min(menu.scrollHeight, 280);
+        const spaceBelow = window.innerHeight - rect.bottom;
+        if (spaceBelow >= menuHeight + 8 || spaceBelow >= rect.top) {
+            menu.style.top = `${rect.bottom + 4}px`;
+        } else {
+            menu.style.top = `${Math.max(8, rect.top - menuHeight - 4)}px`;
+        }
+        // Right-align to the caret so the menu doesn't run off the right
+        // edge of the toolbar.
+        const desiredLeft = rect.right - 200;
+        menu.style.left = `${Math.max(8, desiredLeft)}px`;
+
+        caretBtn.setAttribute('aria-expanded', 'true');
+        openLangMenuEl = menu;
+
+        // Outside-click / Escape / scroll dismissal. Capture phase so we
+        // beat any inner click handler that would re-trigger the toggle
+        // logic. Defer attachment one tick so the click that opened the
+        // menu doesn't immediately close it.
+        const onDocClick = (ev) => {
+            if (menu.contains(ev.target)) return;
+            if (caretBtn.contains(ev.target)) return;  // caret toggle handles itself
+            closeLanguageMenu();
+        };
+        const onKey = (ev) => { if (ev.key === 'Escape') closeLanguageMenu(); };
+        const onScroll = () => closeLanguageMenu();
+        const attachId = setTimeout(() => {
+            document.addEventListener('click', onDocClick, true);
+            document.addEventListener('keydown', onKey, true);
+            window.addEventListener('scroll', onScroll, true);
+        }, 0);
+        openLangMenuCleanup = () => {
+            clearTimeout(attachId);
+            document.removeEventListener('click', onDocClick, true);
+            document.removeEventListener('keydown', onKey, true);
+            window.removeEventListener('scroll', onScroll, true);
+        };
+    }
+
+    async function selectLanguageOverride(code) {
+        // Update the in-memory state and the ticket-wide lock so future
+        // messages and reply translations default to the override. Also
+        // refresh any open reply buttons so the flag emoji matches.
+        detectedCustomerLanguage = code;
+        const ticketId = getTicketIdFromUrl();
+        if (ticketId && ticketLanguages[ticketId] !== code) {
+            ticketLanguages[ticketId] = code;
+            persistTicketLanguages();
+        }
+        updateReplyButton();
+
+        // If the composer has English content below the separator (or no
+        // separator yet), immediately translate to the new language. Per
+        // the Phase 2 #8 spec: "Selection ... immediately translates this
+        // reply." If there's nothing to translate, runReplyTranslate
+        // returns false silently and the agent just gets the new flag.
+        const replyArea = findVisibleComposer();
+        if (!replyArea) return;
+        const replyMarkdown = htmlToMarkdownish(replyArea.innerHTML || '');
+        const englishSource = extractEnglishSourceFromMarkdown(replyMarkdown);
+        if (!englishSource) return;
+        // Reset auto-retranslate's last-translated marker so the new
+        // language run isn't filtered out as a no-change repeat of the
+        // previous translation.
+        autoRetranslate.lastEnglish = '';
+        await runReplyTranslate(replyArea, findVisibleReplyButton());
     }
     
     function updateButtonContent(btn) {
@@ -1568,6 +1732,9 @@
         // Clear any pending auto-retranslate debounce — its composer
         // belonged to the previous ticket and may now be detached.
         clearAutoRetranslateState();
+        // Drop any open language-override menu — its anchor button was
+        // just removed.
+        closeLanguageMenu();
     }
 
     // Before removing UI, put back the original .zd-comment contents for
@@ -1641,6 +1808,7 @@
         detectedCustomerLanguage = null;
         window.ztReplyButton = null;
         clearAutoRetranslateState();
+        closeLanguageMenu();
     }
 
 })();

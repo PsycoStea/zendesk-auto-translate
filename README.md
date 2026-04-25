@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.35 (current)
+### v1.0.36 (current)
+- **Language-override dropdown on the reply flag.** A small `▾` caret button now sits flush right of the flag pill. Clicking it opens a fixed-position dropdown listing every supported language with its flag — 24 entries, alphabetical by display name, scrollable, with the currently active language highlighted. Selecting one writes the choice through to the ticket-wide language lock (so future replies in this ticket default to the new language and the per-ticket lock survives reloads), updates the flag emoji, and — if the composer has English content — immediately retranslates to the new target. The menu closes on outside click, Escape, scroll, or a second click of the caret. Built as a fixed-position element appended to `<body>` rather than nested inside the toolbar so it floats above any Zendesk z-index/`overflow:hidden` layer; the menu flips upward when there's not enough room below the caret. Auto-retranslate's last-translated marker is reset on language change so the new run isn't filtered as a no-change repeat.
+
+### v1.0.35
 - **Auto-retranslate on edit below `---`.** After the first reply translation lands (composer holds `<translation>` + `---` + `<english>`), edits to the English portion now trigger an automatic retranslation 2 seconds after the agent stops typing — no need to re-click the flag. The flag button shows the same `⏳ → ✓` state it shows on a manual click. Edits *above* the separator are ignored on the assumption that the agent is fine-tuning the translation itself; deleting the `---` line entirely also stops auto-firing (the next click then treats the whole reply as fresh English source). A 2s debounce coalesces bursts of typing into one retranslate call. The reply-translation flow refactored so click and auto-fire share a single `runReplyTranslate(replyArea, triggerBtn)` core: click does its alert-driven precondition checks first, auto-fire's input filter handles the same checks silently. `inProgress` guard prevents the synthetic-paste injection from re-triggering itself.
 
 ### v1.0.34
