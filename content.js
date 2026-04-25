@@ -1758,28 +1758,78 @@
         if (window.__ztPdfInterceptorInstalled) return;
         window.__ztPdfInterceptorInstalled = true;
 
+        // v1.0.46 diagnostic: log every click on an anchor so we can see
+        // why PDF clicks aren't being intercepted in the field. Logs go
+        // out unconditionally (no ztDebug gate) for one release; will be
+        // either removed or moved under ztDbg.log once the root cause
+        // is known. Filter by `[zt-pdf]` in DevTools.
+        //
         // Capture phase so we beat Zendesk's own click handlers and any
         // navigation-style listeners on the link itself.
         document.addEventListener('click', (ev) => {
             if (!isEnabled) return;
-            // Plain left-click only. Cmd/Ctrl/Shift/middle-click should
-            // keep their native semantics (open in new tab, download to
-            // disk, etc.) so the agent can still bypass the modal when
-            // they want to.
             if (ev.button !== 0) return;
             if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
 
-            const anchor = ev.target && ev.target.closest
-                ? ev.target.closest('a[href]')
+            const target = ev.target;
+            const anchor = target && target.closest
+                ? target.closest('a[href]')
                 : null;
-            if (!anchor) return;
-            if (!looksLikePdfUrl(anchor.href)) return;
-            if (!isInsideMessageBody(anchor)) return;
 
+            // Only log when we have an anchor — bare clicks on text /
+            // chrome are too noisy to log.
+            if (!anchor) return;
+
+            const inComment = !!(anchor.closest && anchor.closest('.zd-comment'));
+            const inMessage = !!(anchor.closest && anchor.closest('[data-test-id="omni-log-message-content"]'));
+            const looksLikePdf = looksLikePdfUrl(anchor.href);
+
+            console.log('[zt-pdf] anchor click', {
+                href: anchor.href,
+                target: anchor.getAttribute('target'),
+                download: anchor.hasAttribute('download'),
+                inZdComment: inComment,
+                inOmniLogMessage: inMessage,
+                looksLikePdf,
+                clickTargetTag: target && target.tagName,
+                clickTargetClass: target && target.className,
+                anchorInnerText: (anchor.innerText || '').slice(0, 80),
+                anchorTestId: anchor.getAttribute('data-test-id'),
+                ancestorTestIds: collectAncestorTestIds(anchor),
+            });
+
+            if (!looksLikePdf) return;
+            // v1.0.46: TEMPORARILY broadened the scope check from .zd-comment
+            // to also accept [data-test-id="omni-log-message-content"] so we
+            // can see if the issue is the scope check itself. Will narrow
+            // back once we know which selector matches actual attachment
+            // markup in current Zendesk.
+            if (!inComment && !inMessage) {
+                console.log('[zt-pdf] skip: anchor not in .zd-comment or omni-log-message-content');
+                return;
+            }
+
+            console.log('[zt-pdf] intercepting and opening modal');
             ev.preventDefault();
             ev.stopPropagation();
             openPdfModal(anchor.href);
         }, true);
+    }
+
+    // Tiny helper: walk up the anchor's ancestors and collect every
+    // data-test-id we find, up to 8 levels. Helps identify whatever
+    // wrapper Zendesk is using for attachments in current builds.
+    function collectAncestorTestIds(el) {
+        const ids = [];
+        let n = el && el.parentElement;
+        let depth = 0;
+        while (n && depth < 8) {
+            const id = n.getAttribute && n.getAttribute('data-test-id');
+            if (id) ids.push(id);
+            n = n.parentElement;
+            depth++;
+        }
+        return ids;
     }
 
     // ============================================
