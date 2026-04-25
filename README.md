@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.34 (current)
+### v1.0.35 (current)
+- **Auto-retranslate on edit below `---`.** After the first reply translation lands (composer holds `<translation>` + `---` + `<english>`), edits to the English portion now trigger an automatic retranslation 2 seconds after the agent stops typing — no need to re-click the flag. The flag button shows the same `⏳ → ✓` state it shows on a manual click. Edits *above* the separator are ignored on the assumption that the agent is fine-tuning the translation itself; deleting the `---` line entirely also stops auto-firing (the next click then treats the whole reply as fresh English source). A 2s debounce coalesces bursts of typing into one retranslate call. The reply-translation flow refactored so click and auto-fire share a single `runReplyTranslate(replyArea, triggerBtn)` core: click does its alert-driven precondition checks first, auto-fire's input filter handles the same checks silently. `inProgress` guard prevents the synthetic-paste injection from re-triggering itself.
+
+### v1.0.34
 - **Ticket-wide language lock.** Once the extension has detected the customer's language for a ticket — say ticket 3165645 is in German — every subsequent message in that same ticket skips detection entirely and uses the locked value. The lock is persisted forever in `chrome.storage.local.ticketLanguages` keyed by ticket ID, so even reopening the ticket weeks later avoids the redundant detection call. Detection precedence is now: (1) the per-message `data-zt-lang` from earlier scan ticks, (2) the ticket lock when the message is in the currently visible panel, (3) a fresh provider call. Step (2) is gated on `isElementVisible(messageElement)` because Zendesk keeps multiple tickets in the same DOM and `getTicketIdFromUrl()` only knows the active one — applying ticket A's lock to a hidden ticket B's message would mis-translate. Confident detections (anything not `'unknown'`) get written back to the map for the visible ticket; `'unknown'` results are not cached so a transient detection failure doesn't poison the lock. The Phase 2 language-override dropdown will write to this same map for manual overrides.
 
 ### v1.0.33

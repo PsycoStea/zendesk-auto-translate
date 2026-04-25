@@ -153,7 +153,9 @@ Shipped in v1.0.34. First confident detection per ticket (anything not 'unknown'
 
 Visible improvements agents will feel every day. No cross-dependencies inside Phase 2, but all build on Phase 1 (esp. ticket-wide language lock).
 
-### 7. ⬜ Auto-retranslate on edit below `---` (from #2)
+### 7. ✅ Auto-retranslate on edit below `---` (from #2)
+
+Shipped in v1.0.35. After the first translation lands, an `input` listener on the composer fires the existing translate-and-inject pipeline 2s after the agent stops typing — but only when the English source below the `---` actually changed. Edits above the line (the agent tweaking the translation) and edits that delete the `---` entirely don't auto-trigger; the latter just falls back to "next click translates the whole reply". Click handler refactored to call the same `runReplyTranslate(replyArea, triggerBtn)` core both paths share.
 
 **Effort:** ~90 min
 

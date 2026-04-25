@@ -1256,6 +1256,168 @@
         return null;
     }
 
+    // ============================================
+    // REPLY TRANSLATION CORE + AUTO-RETRANSLATE
+    // ============================================
+    //
+    // Phase 1 ended with reply translation triggered only by an explicit
+    // flag click. Phase 2 #7 extends that with auto-retranslate: after a
+    // first translation lands (so the composer holds <translation> + ---
+    // + <english>), an `input` listener watches for edits below the
+    // separator and re-runs the translation flow 2s after the agent
+    // stops typing. Edits *above* the separator are ignored — that's the
+    // agent tweaking the translation itself.
+
+    const AUTO_RETRANSLATE_DEBOUNCE_MS = 2000;
+
+    // Module-level state for auto-retranslate. Only ever one composer is
+    // visibly active at a time (Zendesk multi-ticket DOM hides the rest),
+    // so a single shared object is enough; clearAutoRetranslateState()
+    // resets it on toggle-off and ticket switches.
+    const autoRetranslate = {
+        composer: null,        // composer we attached the input listener to
+        timer: null,           // pending debounce timer
+        lastEnglish: '',       // last English source we successfully translated
+        inProgress: false,     // guard against re-entry / our own injection events
+    };
+
+    function clearAutoRetranslateState() {
+        if (autoRetranslate.timer) {
+            clearTimeout(autoRetranslate.timer);
+            autoRetranslate.timer = null;
+        }
+        autoRetranslate.composer = null;
+        autoRetranslate.lastEnglish = '';
+        autoRetranslate.inProgress = false;
+    }
+
+    // Pull "everything after the last `---` separator" out of the reply's
+    // markdown. Used by both the click handler (precondition check) and
+    // the auto-retranslate debounce (change detection). Without a
+    // separator, the whole markdown is the source.
+    function extractEnglishSourceFromMarkdown(md) {
+        const sepRegex = /(?:^|\n\n)---\s*(?:\n\n|$)/g;
+        let lastSepEnd = -1;
+        let m;
+        while ((m = sepRegex.exec(md)) !== null) {
+            lastSepEnd = m.index + m[0].length;
+        }
+        return (lastSepEnd >= 0 ? md.slice(lastSepEnd) : md).trim();
+    }
+
+    // Idempotent: attaches one input listener per composer. The listener
+    // fires often (every keystroke) and is cheap — heavy work is gated
+    // behind the debounce timer, which only fires once 2s after the last
+    // change.
+    function attachAutoRetranslateListener(replyArea, triggerBtn) {
+        if (autoRetranslate.composer === replyArea) return;
+
+        // Switching to a new composer (e.g. ticket switch). Drop any
+        // pending timer for the previous one — it would either no-op
+        // (composer detached) or worse, fire a translate against a stale
+        // reference.
+        if (autoRetranslate.timer) {
+            clearTimeout(autoRetranslate.timer);
+            autoRetranslate.timer = null;
+        }
+        autoRetranslate.composer = replyArea;
+
+        replyArea.addEventListener('input', () => {
+            // Skip events fired by our own synthetic-paste injection.
+            if (autoRetranslate.inProgress) return;
+            // Separator gone → agent deleted the line. Per spec: don't
+            // auto-retranslate; wait for the next explicit click which
+            // will treat the whole reply as fresh English.
+            if (!replyArea.querySelector('hr')) return;
+
+            const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || ''));
+            // No change in English source → agent is editing the
+            // translation portion (above the ---), or CKEditor is doing
+            // a markup-only normalization. Either way, don't retranslate.
+            if (!eng || eng === autoRetranslate.lastEnglish) return;
+
+            // Debounce: restart on every keystroke, fire only on the
+            // trailing edge after AUTO_RETRANSLATE_DEBOUNCE_MS of quiet.
+            if (autoRetranslate.timer) clearTimeout(autoRetranslate.timer);
+            autoRetranslate.timer = setTimeout(() => {
+                autoRetranslate.timer = null;
+                // Re-check all guards — composer may have been swapped or
+                // the agent may have undone their edit during the wait.
+                if (autoRetranslate.inProgress) return;
+                if (!replyArea.isConnected) return;
+                if (!replyArea.querySelector('hr')) return;
+                const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(replyArea.innerHTML || ''));
+                if (!eng2 || eng2 === autoRetranslate.lastEnglish) return;
+                // findVisibleReplyButton picks up the current toolbar's
+                // button, which may differ from `triggerBtn` after a
+                // React re-render.
+                runReplyTranslate(replyArea, findVisibleReplyButton() || triggerBtn);
+            }, AUTO_RETRANSLATE_DEBOUNCE_MS);
+        });
+    }
+
+    // The single entry point both the click handler and the
+    // auto-retranslate debounce funnel through. Assumes preconditions
+    // (composer exists, English source non-empty, language detected) —
+    // the click handler does its own alert-driven precondition checks
+    // before calling here; auto-retranslate's input filter does the
+    // equivalent silently.
+    async function runReplyTranslate(replyArea, triggerBtn) {
+        if (autoRetranslate.inProgress) return false;
+        if (!detectedCustomerLanguage) return false;
+
+        const replyHtml = replyArea.innerHTML || '';
+        const replyMarkdown = htmlToMarkdownish(replyHtml);
+        const englishSource = extractEnglishSourceFromMarkdown(replyMarkdown);
+        if (!englishSource) return false;
+
+        autoRetranslate.inProgress = true;
+
+        ztDbg.groupCollapsed('[zt debug] reply translation pipeline');
+        ztDbg.log('1. reply innerHTML:', replyHtml);
+        ztDbg.log('2. reply markdown (full):', JSON.stringify(replyMarkdown));
+        ztDbg.log('2b. english source:', JSON.stringify(englishSource));
+
+        let originalHTML;
+        if (triggerBtn) {
+            originalHTML = triggerBtn.innerHTML;
+            triggerBtn.disabled = true;
+            triggerBtn.innerHTML = '⏳';
+            triggerBtn.style.cursor = 'wait';
+        }
+
+        try {
+            const translatedMarkdown = await translate(englishSource, detectedCustomerLanguage, 'en');
+            ztDbg.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
+
+            const combinedMarkdown = `${translatedMarkdown}\n\n---\n\n${englishSource}`;
+            const combinedHtml = markdownishToHtml(combinedMarkdown);
+            ztDbg.log('4. combined HTML (about to inject):', combinedHtml);
+
+            const ok = await replaceReplyText(replyArea, combinedMarkdown, combinedHtml);
+
+            ztDbg.log('5. reply innerHTML after inject:', replyArea.innerHTML);
+            ztDbg.log('5b. reply innerText after inject:', replyArea.innerText);
+            ztDbg.groupEnd();
+
+            if (ok) {
+                autoRetranslate.lastEnglish = englishSource;
+                attachAutoRetranslateListener(replyArea, triggerBtn);
+            }
+
+            if (triggerBtn) {
+                triggerBtn.innerHTML = ok ? '✓' : '⚠️';
+                triggerBtn.style.cursor = 'pointer';
+                triggerBtn.disabled = false;
+                setTimeout(() => { triggerBtn.innerHTML = originalHTML; }, 2000);
+            }
+
+            return ok;
+        } finally {
+            autoRetranslate.inProgress = false;
+        }
+    }
+
     function addReplyTranslateButton() {
         if (!isEnabled) return;
 
@@ -1327,81 +1489,31 @@
         translateBtn.addEventListener('click', async (e) => {
             e.preventDefault();
 
+            // Click-only preconditions. Surfaced as alerts because they
+            // represent user errors the agent needs to acknowledge —
+            // toasts would auto-dismiss before they're noticed.
+            // Auto-retranslate handles the same conditions silently
+            // (the input filter just no-ops).
             if (!detectedCustomerLanguage) {
                 alert('No customer language detected. Please translate a customer message first.');
                 return;
             }
-
             const replyArea = findVisibleComposer();
             if (!replyArea) {
                 alert('Could not find the active reply area.');
                 return;
             }
-
-            // Extract formatted reply as a markdown-ish string. Translation
-            // providers preserve the markdown syntax reliably, so the
-            // roundtrip (HTML → markdown → translate → markdown → HTML)
-            // keeps bold/italic/lists/links/line breaks intact.
-            const replyHtml = replyArea.innerHTML || '';
-            const replyMarkdown = htmlToMarkdownish(replyHtml);
+            const replyMarkdown = htmlToMarkdownish(replyArea.innerHTML || '');
             if (!replyMarkdown) {
                 alert('Please write your reply first.');
                 return;
             }
-
-            // If the reply already has a '---' separator from a previous
-            // translation, the agent is re-translating after editing the
-            // English below the line. Take everything after the last
-            // separator as the authoritative English source — the
-            // translation above gets replaced. Without a separator, the
-            // whole reply is the source.
-            const sepRegex = /(?:^|\n\n)---\s*(?:\n\n|$)/g;
-            let lastSepEnd = -1;
-            let sepMatch;
-            while ((sepMatch = sepRegex.exec(replyMarkdown)) !== null) {
-                lastSepEnd = sepMatch.index + sepMatch[0].length;
-            }
-            const englishSource = (lastSepEnd >= 0
-                ? replyMarkdown.slice(lastSepEnd)
-                : replyMarkdown).trim();
-            if (!englishSource) {
+            if (!extractEnglishSourceFromMarkdown(replyMarkdown)) {
                 alert('Please write your reply in English below the separator.');
                 return;
             }
 
-            ztDbg.groupCollapsed('[zt debug] reply translation pipeline');
-            ztDbg.log('1. reply innerHTML:', replyHtml);
-            ztDbg.log('2. reply markdown (full):', JSON.stringify(replyMarkdown));
-            ztDbg.log('2b. english source:', JSON.stringify(englishSource));
-
-            const originalHTML = translateBtn.innerHTML;
-            translateBtn.disabled = true;
-            translateBtn.innerHTML = '⏳';
-            translateBtn.style.cursor = 'wait';
-
-            const translatedMarkdown = await translate(englishSource, detectedCustomerLanguage, 'en');
-            ztDbg.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
-
-            // Build the combined reply: translation, separator, original
-            // English. Customer receives both versions; agent can re-click
-            // the flag to refresh just the translation portion.
-            const combinedMarkdown = `${translatedMarkdown}\n\n---\n\n${englishSource}`;
-            const combinedHtml = markdownishToHtml(combinedMarkdown);
-            ztDbg.log('4. combined HTML (about to inject):', combinedHtml);
-
-            const ok = await replaceReplyText(replyArea, combinedMarkdown, combinedHtml);
-
-            ztDbg.log('5. reply innerHTML after inject:', replyArea.innerHTML);
-            ztDbg.log('5b. reply innerText after inject:', replyArea.innerText);
-            ztDbg.groupEnd();
-
-            translateBtn.innerHTML = ok ? '✓' : '⚠️';
-            translateBtn.style.cursor = 'pointer';
-            translateBtn.disabled = false;
-
-            setTimeout(() => {
-                translateBtn.innerHTML = originalHTML;
-            }, 2000);
+            await runReplyTranslate(replyArea, translateBtn);
         });
         
         buttonWrapper.appendChild(translateBtn);
@@ -1453,6 +1565,9 @@
             delete el.dataset.ztProcessed;
         });
         window.ztReplyButton = null;
+        // Clear any pending auto-retranslate debounce — its composer
+        // belonged to the previous ticket and may now be detached.
+        clearAutoRetranslateState();
     }
 
     // Before removing UI, put back the original .zd-comment contents for
@@ -1525,6 +1640,7 @@
         // messages is preserved — it's per-message detection, not per-ticket.
         detectedCustomerLanguage = null;
         window.ztReplyButton = null;
+        clearAutoRetranslateState();
     }
-    
+
 })();
