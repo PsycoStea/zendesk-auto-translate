@@ -56,7 +56,9 @@ Shipped in v1.0.31. Windows default is `Ctrl+Shift+X` (the earlier open question
 
 ---
 
-### 2. ⬜ Diagnostic log toggle (from #8)
+### 2. ✅ Diagnostic log toggle (from #8)
+
+Shipped in v1.0.32. `chrome.storage.local.set({ztDebug: true})` enables verbose logs; `chrome.storage.local.remove('ztDebug')` disables. Hot-reloaded via `storage.onChanged` so no tab refresh required.
 
 **Effort:** ~30 min
 
@@ -71,7 +73,9 @@ Shipped in v1.0.31. Windows default is `Ctrl+Shift+X` (the earlier open question
 
 ---
 
-### 3. ⬜ Rate-limit graceful degradation (from #7)
+### 3. ✅ Rate-limit graceful degradation (from #7)
+
+Shipped in v1.0.32. 429 from Google sets a 60s cool-off; during the window, both `translateParagraph` and `detectLanguage` skip Google and go straight to LibreTranslate (or surface a "wait Xs" toast if no fallback configured).
 
 **Effort:** ~60 min
 

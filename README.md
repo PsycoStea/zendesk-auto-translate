@@ -81,7 +81,11 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.31 (current)
+### v1.0.32 (current)
+- **Hidden diagnostic-log toggle.** Verbose `[zt]` and `[zt debug]` translator logs (cache-hit notes, "reply replaced via strategy" lines, the full reply-translation pipeline group with innerHTML/markdown/translated-output snapshots) are now off by default and gated behind `chrome.storage.local.ztDebug`. Toggle from any DevTools console: `chrome.storage.local.set({ztDebug: true})` to enable, `chrome.storage.local.remove('ztDebug')` to disable. The flag is hot-reloaded via `storage.onChanged` so no tab refresh is needed. Lifecycle messages (init/ready), warnings (`console.warn`), and errors (`console.error`) are always on — only the high-volume diagnostic stream is gated, keeping production console noise low while leaving the same logs one keystroke away when something needs investigating.
+- **Rate-limit graceful degradation on Google 429.** When Google's public translate endpoint returns HTTP 429, the extension now sets a 60s cool-off instead of letting every subsequent paragraph independently re-trigger the rate-limit. During the window: `translateParagraph` skips Google and goes straight to LibreTranslate when one is configured, so the agent keeps working uninterrupted; without LibreTranslate, the call throws a typed error and the toast says "Google Translate rate-limited — wait Xs, or configure LibreTranslate fallback." `detectLanguage` mirrors the same logic. After the 60 seconds elapse, Google is silently re-tried on the next call. Implemented as a single shared `googleCooloffUntil` timestamp so a 429 triggered by detection also short-circuits the next translation, and vice versa.
+
+### v1.0.31
 - **Keyboard shortcut for reply translation.** `Cmd+Shift+X` (macOS) / `Ctrl+Shift+X` (Windows/Linux) triggers the reply-translate flag on the currently-visible ticket, the same as a click. Registered via the Manifest V3 `commands` API; agents can remap or disable it at `chrome://extensions/shortcuts` without any extension change. The background service worker catches the keypress and forwards a `shortcut-translate-reply` message to the active Zendesk tab's content script. If no non-English ticket is open (so no flag button is present), a toast explains what's missing instead of silently doing nothing. Windows default is `Ctrl+Shift+X` rather than `Ctrl+Shift+T` to avoid colliding with Chrome's built-in "reopen closed tab".
 
 ### v1.0.30

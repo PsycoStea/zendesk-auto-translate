@@ -16,6 +16,32 @@
         libretranslateApiKey: ''
     };
 
+    // Hidden developer flag for verbose translator + debug-pipeline logs.
+    // Lifecycle logs (init/ready), warnings, and console.error are always
+    // on. Toggle via DevTools console:
+    //   chrome.storage.local.set({ztDebug: true})   // enable
+    //   chrome.storage.local.remove('ztDebug')      // disable
+    // Read once at init and kept in sync via storage.onChanged so the flag
+    // can be flipped without reloading the tab.
+    let ztDebug = false;
+    const ztDbg = {
+        log: (...args) => { if (ztDebug) console.log(...args); },
+        groupCollapsed: (label) => { if (ztDebug) console.groupCollapsed(label); },
+        groupEnd: () => { if (ztDebug) console.groupEnd(); }
+    };
+
+    // Google rate-limit cool-off. When googleTranslate / googleDetect see
+    // an HTTP 429, this is set to Date.now() + 60_000. While in effect,
+    // Google calls are skipped entirely — translateParagraph / detectLanguage
+    // go straight to LibreTranslate (when configured) or surface an error
+    // toast. Avoids hammering Google during the cool-down and unlocks the
+    // fallback for the full window instead of 429ing every call.
+    let googleCooloffUntil = 0;
+    function inGoogleCooloff() { return Date.now() < googleCooloffUntil; }
+    function googleCooloffSecondsLeft() {
+        return Math.max(0, Math.ceil((googleCooloffUntil - Date.now()) / 1000));
+    }
+
     function normalizeUrl(u) {
         return (u || '').trim().replace(/\/+$/, '');
     }
@@ -68,12 +94,13 @@
     }
 
     chrome.storage.local.get(
-        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats'],
+        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats', 'ztDebug'],
         (result) => {
             isEnabled = result.enabled !== false;
             translationMemory = result.translationMemory || {};
             settings.libretranslateUrl = normalizeUrl(result.libretranslateUrl);
             settings.libretranslateApiKey = result.libretranslateApiKey || '';
+            ztDebug = !!result.ztDebug;
             if (result.cacheStats && typeof result.cacheStats === 'object') {
                 cacheStats.hits = Number(result.cacheStats.hits) || 0;
                 cacheStats.total = Number(result.cacheStats.total) || 0;
@@ -91,6 +118,7 @@
         if (area !== 'local') return;
         if (changes.libretranslateUrl) settings.libretranslateUrl = normalizeUrl(changes.libretranslateUrl.newValue);
         if (changes.libretranslateApiKey) settings.libretranslateApiKey = changes.libretranslateApiKey.newValue || '';
+        if (changes.ztDebug) ztDebug = !!changes.ztDebug.newValue;
         // If another Zendesk tab (or a service worker) updated the cache
         // stats, pick up the newer value. Guard against our own pending
         // write losing counts — only take the incoming value if it's at
@@ -235,9 +263,25 @@
         return `${providerLabel} error: ${(err && err.message) || err}`;
     }
 
+    // Both Google calls share rate-limit handling. On HTTP 429 we set a
+    // 60s cool-off and throw a typed error so callers (translateParagraph,
+    // detectLanguage) can decide whether to fall back to LibreTranslate or
+    // surface a toast. Throwing a typed error rather than returning a
+    // sentinel means the existing try/catch fallback chain works unchanged
+    // for non-429 errors too.
+    function makeRateLimitError() {
+        const err = new Error(`Google Translate rate-limited (HTTP 429). Cooling off for 60s.`);
+        err.code = 'rate-limited';
+        return err;
+    }
+
     async function googleDetect(text) {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text.slice(0, 500))}`;
         const res = await fetchWithTimeout(url);
+        if (res.status === 429) {
+            googleCooloffUntil = Date.now() + 60_000;
+            throw makeRateLimitError();
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         return data[2] || 'unknown';
@@ -246,6 +290,10 @@
     async function googleTranslate(text, target, source) {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${source}&tl=${target}&dt=t&q=${encodeURIComponent(text)}`;
         const res = await fetchWithTimeout(url);
+        if (res.status === 429) {
+            googleCooloffUntil = Date.now() + 60_000;
+            throw makeRateLimitError();
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         let out = '';
@@ -297,6 +345,17 @@
     // configured. On both-failed, return 'unknown' and toast once.
     async function detectLanguage(text) {
         if (!guardExtensionContext()) return 'unknown';
+
+        // During cool-off, go straight to LibreTranslate when configured;
+        // otherwise return 'unknown' silently (no toast — detection runs
+        // automatically per message, and one toast per translateParagraph
+        // failure is already plenty of feedback for the rate-limit state).
+        if (inGoogleCooloff()) {
+            if (!settings.libretranslateUrl) return 'unknown';
+            try { return await libreDetect(text); }
+            catch (_) { return 'unknown'; }
+        }
+
         try {
             return await googleDetect(text);
         } catch (googleErr) {
@@ -378,16 +437,30 @@
     async function translateParagraph(text, targetLang, sourceLang) {
         const { text: tokenized, urls } = protectUrls(text);
         let translated;
-        try {
-            translated = await googleTranslate(tokenized, targetLang, sourceLang);
-        } catch (googleErr) {
-            if (!settings.libretranslateUrl) throw googleErr;
+
+        // While Google is in cool-off, skip it entirely. With LibreTranslate
+        // configured we go straight to the fallback for the full 60s window;
+        // without it, throw a typed error so the user sees a useful toast
+        // ("rate-limited, configure fallback or wait Xs") instead of every
+        // call burning another 429.
+        if (inGoogleCooloff()) {
+            if (!settings.libretranslateUrl) {
+                const secs = googleCooloffSecondsLeft();
+                throw new Error(`Google Translate rate-limited — wait ${secs}s, or configure LibreTranslate fallback in the popup.`);
+            }
+            translated = await libreTranslate(tokenized, targetLang, sourceLang);
+        } else {
             try {
-                translated = await libreTranslate(tokenized, targetLang, sourceLang);
-            } catch (_libreErr) {
-                // Both providers failed. Surface the Google error — it's
-                // usually more informative than LibreTranslate's.
-                throw googleErr;
+                translated = await googleTranslate(tokenized, targetLang, sourceLang);
+            } catch (googleErr) {
+                if (!settings.libretranslateUrl) throw googleErr;
+                try {
+                    translated = await libreTranslate(tokenized, targetLang, sourceLang);
+                } catch (_libreErr) {
+                    // Both providers failed. Surface the Google error — it's
+                    // usually more informative than LibreTranslate's.
+                    throw googleErr;
+                }
             }
         }
         const restored = restoreUrls(translated, urls);
@@ -417,7 +490,7 @@
             translationMemory[memoryKey] = cached;
             persistCacheStats();
             persistMemory();
-            console.log('[zt] Using cached translation (key:', memoryKey.slice(0, 60) + '…)');
+            ztDbg.log('[zt] Using cached translation (key:', memoryKey.slice(0, 60) + '…)');
             return cached;
         }
         persistCacheStats();
@@ -997,7 +1070,7 @@
             for (const s of strategies) {
                 const ok = await s.run(replyArea, plainText, html);
                 if (ok) {
-                    console.log(`[zt] Reply replaced via strategy: ${s.name}`);
+                    ztDbg.log(`[zt] Reply replaced via strategy: ${s.name}`);
                     try {
                         const sel = window.getSelection();
                         const range = document.createRange();
@@ -1008,7 +1081,7 @@
                     } catch (_) {}
                     return true;
                 }
-                console.log(`[zt] Strategy ${s.name} did not stick, trying next`);
+                ztDbg.log(`[zt] Strategy ${s.name} did not stick, trying next`);
             }
             console.error('[zt] All reply replacement strategies failed');
             showToast('Could not replace reply text — no strategy worked.', 'error');
@@ -1193,10 +1266,10 @@
                 return;
             }
 
-            console.groupCollapsed('[zt debug] reply translation pipeline');
-            console.log('1. reply innerHTML:', replyHtml);
-            console.log('2. reply markdown (full):', JSON.stringify(replyMarkdown));
-            console.log('2b. english source:', JSON.stringify(englishSource));
+            ztDbg.groupCollapsed('[zt debug] reply translation pipeline');
+            ztDbg.log('1. reply innerHTML:', replyHtml);
+            ztDbg.log('2. reply markdown (full):', JSON.stringify(replyMarkdown));
+            ztDbg.log('2b. english source:', JSON.stringify(englishSource));
 
             const originalHTML = translateBtn.innerHTML;
             translateBtn.disabled = true;
@@ -1204,20 +1277,20 @@
             translateBtn.style.cursor = 'wait';
 
             const translatedMarkdown = await translate(englishSource, detectedCustomerLanguage, 'en');
-            console.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
+            ztDbg.log('3. translated markdown (from provider):', JSON.stringify(translatedMarkdown));
 
             // Build the combined reply: translation, separator, original
             // English. Customer receives both versions; agent can re-click
             // the flag to refresh just the translation portion.
             const combinedMarkdown = `${translatedMarkdown}\n\n---\n\n${englishSource}`;
             const combinedHtml = markdownishToHtml(combinedMarkdown);
-            console.log('4. combined HTML (about to inject):', combinedHtml);
+            ztDbg.log('4. combined HTML (about to inject):', combinedHtml);
 
             const ok = await replaceReplyText(replyArea, combinedMarkdown, combinedHtml);
 
-            console.log('5. reply innerHTML after inject:', replyArea.innerHTML);
-            console.log('5b. reply innerText after inject:', replyArea.innerText);
-            console.groupEnd();
+            ztDbg.log('5. reply innerHTML after inject:', replyArea.innerHTML);
+            ztDbg.log('5b. reply innerText after inject:', replyArea.innerText);
+            ztDbg.groupEnd();
 
             translateBtn.innerHTML = ok ? '✓' : '⚠️';
             translateBtn.style.cursor = 'pointer';

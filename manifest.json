@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
