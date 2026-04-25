@@ -748,23 +748,30 @@
         commentTranslatedHtml.set(messageBody, translatedBodyHtml);
 
         // Swap into translated view. Agent sees English by default.
-        messageBody.innerHTML = translatedBodyHtml;
-        messageBody.classList.add('zt-showing-translation');
+        // Preserve the message's viewport position across the height
+        // change — if the agent has already scrolled to read this message
+        // when auto-translate finishes, it shouldn't jump under them.
+        preserveScrollAround(messageBody, () => {
+            messageBody.innerHTML = translatedBodyHtml;
+            messageBody.classList.add('zt-showing-translation');
+        });
 
         toggleBtn.disabled = false;
         toggleBtn.textContent = 'Show original';
         toggleBtn.onclick = () => {
-            if (messageBody.classList.contains('zt-showing-translation')) {
-                const original = commentOriginalHtml.get(messageBody);
-                if (original != null) messageBody.innerHTML = original;
-                messageBody.classList.remove('zt-showing-translation');
-                toggleBtn.textContent = 'Show translation';
-            } else {
-                const tr = commentTranslatedHtml.get(messageBody);
-                if (tr != null) messageBody.innerHTML = tr;
-                messageBody.classList.add('zt-showing-translation');
-                toggleBtn.textContent = 'Show original';
-            }
+            preserveScrollAround(messageBody, () => {
+                if (messageBody.classList.contains('zt-showing-translation')) {
+                    const original = commentOriginalHtml.get(messageBody);
+                    if (original != null) messageBody.innerHTML = original;
+                    messageBody.classList.remove('zt-showing-translation');
+                    toggleBtn.textContent = 'Show translation';
+                } else {
+                    const tr = commentTranslatedHtml.get(messageBody);
+                    if (tr != null) messageBody.innerHTML = tr;
+                    messageBody.classList.add('zt-showing-translation');
+                    toggleBtn.textContent = 'Show original';
+                }
+            });
         };
     }
     
@@ -1109,6 +1116,46 @@
         if (el.offsetParent === null) return false;
         const rect = el.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
+    }
+
+    // Find the nearest ancestor of `el` that actually scrolls vertically.
+    // Zendesk's conversation log lives inside a custom scrolling div, not
+    // the window — adjusting window.scrollY alone would silently no-op
+    // there. Returns null when nothing in the chain scrolls (e.g. a short
+    // ticket that fits in the viewport), which the caller treats as "use
+    // window".
+    function findScrollableAncestor(el) {
+        let n = el && el.parentElement;
+        while (n && n !== document.body && n !== document.documentElement) {
+            const cs = getComputedStyle(n);
+            if (/(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight) {
+                return n;
+            }
+            n = n.parentElement;
+        }
+        return null;
+    }
+
+    // Run `mutate` (which is expected to change the height of `anchor` —
+    // e.g. swap its innerHTML between original and translated content)
+    // and then adjust the scroll container so `anchor` stays at the same
+    // viewport pixel position. Without this, the Show original ↔ Show
+    // translation toggle can shove the message hundreds of pixels under
+    // the agent's cursor when source and translation differ in length.
+    // Same protection is applied to the initial auto-translate swap so
+    // an agent reading a message they've already scrolled to doesn't see
+    // it jump when translation lands.
+    function preserveScrollAround(anchor, mutate) {
+        const scroller = findScrollableAncestor(anchor);
+        const before = anchor.getBoundingClientRect().top;
+        mutate();
+        requestAnimationFrame(() => {
+            const after = anchor.getBoundingClientRect().top;
+            const delta = after - before;
+            if (Math.abs(delta) < 1) return;
+            if (scroller) scroller.scrollTop += delta;
+            else window.scrollBy(0, delta);
+        });
     }
 
     // Synchronously pick the language of whichever customer message the

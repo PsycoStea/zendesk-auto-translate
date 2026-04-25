@@ -90,7 +90,12 @@ Shipped in v1.0.32. 429 from Google sets a 60s cool-off; during the window, both
 
 ---
 
-### 4. ⬜ Service worker keep-alive (from #9)
+### 4. 🚫 Service worker keep-alive (from #9) — deferred
+
+Skipped per the spec's own "or skip if not needed" guidance: the v1.0.31 keyboard shortcut and the popup's toggle / Clear-cache messages all route through the same `chrome.tabs.sendMessage` path that this keep-alive would protect, and none have shown drops in the field. Re-open this item if any of the following symptoms appear:
+- Pressing the reply-translate shortcut sometimes does nothing.
+- Toggling the extension from the popup leaves a Zendesk tab still translating (or vice versa).
+- "Clear cache" appears to clear popup state but not the in-tab cache until reload.
 
 **Effort:** ~30 min — **or skip if not needed**
 
@@ -102,7 +107,9 @@ Shipped in v1.0.32. 429 from Google sets a 60s cool-off; during the window, both
 
 ---
 
-### 5. ⬜ Preserve scroll position across toggle (from #3)
+### 5. ✅ Preserve scroll position across toggle (from #3)
+
+Shipped in v1.0.33. New `preserveScrollAround(anchor, mutate)` helper records the message's viewport position before the swap and adjusts the nearest scrollable ancestor (or the window as a fallback) on the next frame so the anchor stays at the same pixel position. Applied to both the Show original ↔ Show translation toggle and the initial auto-translate swap.
 
 **Effort:** ~45 min
 
@@ -325,7 +332,6 @@ The largest single feature. Split into three incremental releases so something s
 ## Questions requiring answers before the relevant phase starts
 
 - **(#14) DOM sample for customer sidebar** — need outerHTML of the shipping/billing address block so I can write reliable country-code selectors. Defer until Phase 2.
-- **(#9) Service worker keep-alive symptoms** — have you observed dropped commands / toggle messages not reaching tabs? If no, skip this item.
 
 ---
 
