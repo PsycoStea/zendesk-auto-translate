@@ -1706,7 +1706,7 @@
         return !!(el.closest('.zd-comment') || el.closest('[data-test-id="omni-log-message-content"]'));
     }
 
-    function openPdfModal(pdfUrl) {
+    async function openPdfModal(pdfUrl) {
         if (pdfModal) closePdfModal();
         pdfPrevFocus = document.activeElement;
 
@@ -1731,16 +1731,25 @@
             closePdfModal();
         });
 
+        // Inline status (loading / error). Hidden once the iframe
+        // takes over rendering. Sits absolutely positioned over the
+        // backdrop so it's visible during the fetch window.
+        const status = document.createElement('div');
+        status.className = 'zt-pdf-status';
+        status.textContent = 'Loading PDF…';
+
         const iframe = document.createElement('iframe');
         iframe.className = 'zt-pdf-frame';
-        // chrome.runtime.getURL returns a chrome-extension:// URL for
-        // resources listed in manifest.web_accessible_resources. PDF.js
-        // reads the `?file=` query and fetches the PDF; our host-
-        // permission grant for *.zdusercontent.com is what lets the
-        // viewer's fetch from inside the iframe succeed.
-        const viewerUrl = chrome.runtime.getURL('lib/pdfjs/web/viewer.html');
-        iframe.src = `${viewerUrl}?file=${encodeURIComponent(pdfUrl)}`;
         iframe.setAttribute('title', 'PDF viewer');
+        // Open the viewer with NO ?file= query — the inline bridge
+        // script in viewer.html will receive the binary data via
+        // postMessage and feed it directly to PDF.js. This sidesteps
+        // the credentials/CORS issue that the URL-based load hits on
+        // Zendesk's `/attachments/<token>/` redirector (which requires
+        // the agent's session cookie, not sent from the iframe's
+        // chrome-extension:// origin).
+        const viewerUrl = chrome.runtime.getURL('lib/pdfjs/web/viewer.html');
+        iframe.src = viewerUrl;
 
         // Click on backdrop (not iframe / close button) dismisses.
         backdrop.addEventListener('mousedown', (ev) => {
@@ -1749,6 +1758,7 @@
 
         backdrop.appendChild(iframe);
         backdrop.appendChild(closeBtn);
+        backdrop.appendChild(status);
         document.body.appendChild(backdrop);
         pdfModal = backdrop;
 
@@ -1759,6 +1769,55 @@
         // Move focus into the modal so screen readers + keyboard users
         // start there instead of leaving focus on the original link.
         try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+
+        // Fetch + post in parallel with the iframe loading. The fetch
+        // happens in the page's context so cookies for *.zendesk.com
+        // travel automatically (same-origin same-domain request).
+        // Once both the bytes and the iframe load are ready, post.
+        let bytesPromise, iframeReady;
+        try {
+            console.log('[zt-pdf] fetching', pdfUrl);
+            bytesPromise = fetch(pdfUrl, {
+                credentials: 'include',
+                redirect: 'follow',
+            }).then(async (r) => {
+                console.log('[zt-pdf] fetch response', r.status, r.statusText, r.headers.get('content-type'));
+                if (!r.ok) {
+                    throw new Error(`HTTP ${r.status} ${r.statusText}`);
+                }
+                return r.arrayBuffer();
+            });
+        } catch (err) {
+            console.error('[zt-pdf] fetch error:', err);
+            status.textContent = `Failed to load PDF: ${err.message || err}`;
+            status.classList.add('zt-pdf-status-error');
+            return;
+        }
+
+        iframeReady = new Promise((resolve) => {
+            iframe.addEventListener('load', resolve, { once: true });
+        });
+
+        try {
+            const [bytes] = await Promise.all([bytesPromise, iframeReady]);
+            // Iframe may have closed during fetch (user hit Escape).
+            if (!pdfModal || !iframe.contentWindow) return;
+            console.log('[zt-pdf] posting', bytes.byteLength, 'bytes to viewer');
+            // Transferable: the ArrayBuffer is moved (not copied) so
+            // we don't pay double-memory for large PDFs.
+            iframe.contentWindow.postMessage(
+                { type: 'zt-pdf-load', data: bytes },
+                '*',
+                [bytes]
+            );
+            // Hide status once we've handed off. The viewer will show
+            // its own progress bar from here.
+            status.style.display = 'none';
+        } catch (err) {
+            console.error('[zt-pdf] load pipeline failed:', err);
+            status.textContent = `Failed to load PDF: ${err.message || err}`;
+            status.classList.add('zt-pdf-status-error');
+        }
     }
 
     function onPdfKeydown(ev) {
