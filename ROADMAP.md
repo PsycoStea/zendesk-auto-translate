@@ -207,7 +207,9 @@ Shipped in v1.0.37. `<img>` elements are tokenized to `{{ztimgN}}` during HTML-t
 
 ---
 
-### 10. ⬜ Country-code → language auto-select on new tickets (from #14)
+### 10. 🚫 Country-code → language auto-select on new tickets (from #14) — cancelled
+
+Dropped from v2 scope by user decision (v1.0.41). The country code lives inside the **Refurbed 360 App** sidebar — a third-party Zendesk app whose UI runs in an iframe at `zendesk360.refurbed.com`. Same-origin policy blocks the extension's content script (running on `*.zendesk.com`) from reading inside that iframe. The only paths to extract from there would be: (a) injecting into the Refurbed iframe's origin via additional `host_permissions` and a separate content script, putting us at the mercy of Refurbed's next deploy; or (b) Refurbed exposing a `postMessage` API to the parent. Neither was deemed worth the engineering vs. the existing manual override (caret dropdown, Phase 2 #8) which handles language selection in two clicks on every ticket type.
 
 **Effort:** ~3 hours (after DOM samples in hand)
 
@@ -341,7 +343,6 @@ The largest single feature. Split into three incremental releases so something s
 
 ## Questions requiring answers before the relevant phase starts
 
-- **(#14) DOM sample for customer sidebar** — need outerHTML of the shipping/billing address block so I can write reliable country-code selectors. Defer until Phase 2.
 
 ---
 

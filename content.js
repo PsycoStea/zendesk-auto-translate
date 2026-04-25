@@ -1398,42 +1398,71 @@
         if (autoRetranslate.installed) return;
         autoRetranslate.installed = true;
 
+        // v1.0.41: unconditional diagnostic logs (prefix [zt-auto]) on
+        // every guard so we can see exactly which one is bailing when
+        // auto-retranslate fails to fire after a dropdown override. These
+        // run regardless of ztDebug — they're cheap, prefixed for easy
+        // filtering, and will be quieted in the next release once the
+        // root cause is identified.
         const handler = (ev) => {
             if (!isEnabled) return;
-            // Skip events fired by our own synthetic-paste injection.
-            if (autoRetranslate.inProgress) return;
-            // Only care about input events from a Zendesk reply composer.
+            if (autoRetranslate.inProgress) {
+                console.log('[zt-auto] skip: inProgress', { type: ev.type });
+                return;
+            }
             const composer = ev.target && ev.target.closest
                 ? ev.target.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]')
                 : null;
-            if (!composer) return;
-            // Multi-ticket DOM: ignore composers that aren't visible.
-            if (!isElementVisible(composer)) return;
-            // Separator gone → agent deleted the line, or no translation
-            // has happened yet. Per spec: don't auto-retranslate; wait
-            // for the next explicit click.
-            if (!composer.querySelector('hr')) return;
+            if (!composer) return;  // common: events from outside the composer
+            if (!isElementVisible(composer)) {
+                console.log('[zt-auto] skip: composer not visible', { type: ev.type });
+                return;
+            }
+            if (!composer.querySelector('hr')) {
+                // No <hr> = no first translation yet, or agent deleted
+                // the separator. Quiet because this is the steady state
+                // before any reply is translated.
+                return;
+            }
 
             const eng = extractEnglishSourceFromMarkdown(htmlToMarkdownish(composer.innerHTML || '').md);
-            // No change in English source → agent is editing the
-            // translation portion (above the ---), or CKEditor is doing
-            // a markup-only normalization. Either way, don't retranslate.
+            console.log('[zt-auto] event', {
+                type: ev.type,
+                detectedLang: detectedCustomerLanguage,
+                eng: eng ? eng.slice(0, 60) : eng,
+                lastEnglish: autoRetranslate.lastEnglish ? autoRetranslate.lastEnglish.slice(0, 60) : autoRetranslate.lastEnglish,
+                same: eng === autoRetranslate.lastEnglish,
+            });
             if (!eng || eng === autoRetranslate.lastEnglish) return;
 
-            // Debounce: restart on every keystroke, fire only on the
-            // trailing edge after AUTO_RETRANSLATE_DEBOUNCE_MS of quiet.
             if (autoRetranslate.timer) clearTimeout(autoRetranslate.timer);
             autoRetranslate.timer = setTimeout(() => {
                 autoRetranslate.timer = null;
-                if (autoRetranslate.inProgress) return;
-                // Re-resolve the composer — the one we saw at debounce
-                // start may have been re-rendered. findVisibleComposer
-                // picks the currently-visible one.
+                if (autoRetranslate.inProgress) {
+                    console.log('[zt-auto] debounce skip: inProgress');
+                    return;
+                }
                 const live = findVisibleComposer();
-                if (!live || !live.isConnected) return;
-                if (!live.querySelector('hr')) return;
+                if (!live || !live.isConnected) {
+                    console.log('[zt-auto] debounce skip: composer gone');
+                    return;
+                }
+                if (!live.querySelector('hr')) {
+                    console.log('[zt-auto] debounce skip: no <hr>');
+                    return;
+                }
                 const eng2 = extractEnglishSourceFromMarkdown(htmlToMarkdownish(live.innerHTML || '').md);
-                if (!eng2 || eng2 === autoRetranslate.lastEnglish) return;
+                if (!eng2 || eng2 === autoRetranslate.lastEnglish) {
+                    console.log('[zt-auto] debounce skip: eng2 matches lastEnglish', {
+                        eng2: eng2 ? eng2.slice(0, 60) : eng2,
+                        lastEnglish: autoRetranslate.lastEnglish ? autoRetranslate.lastEnglish.slice(0, 60) : autoRetranslate.lastEnglish,
+                    });
+                    return;
+                }
+                console.log('[zt-auto] FIRE runReplyTranslate', {
+                    eng2: eng2.slice(0, 60),
+                    targetLang: detectedCustomerLanguage,
+                });
                 runReplyTranslate(live, findVisibleReplyButton());
             }, AUTO_RETRANSLATE_DEBOUNCE_MS);
         };
@@ -1462,13 +1491,23 @@
     // before calling here; auto-retranslate's input filter does the
     // equivalent silently.
     async function runReplyTranslate(replyArea, triggerBtn) {
-        if (autoRetranslate.inProgress) return false;
-        if (!detectedCustomerLanguage) return false;
+        if (autoRetranslate.inProgress) {
+            console.log('[zt-auto] runReplyTranslate skip: inProgress');
+            return false;
+        }
+        if (!detectedCustomerLanguage) {
+            console.log('[zt-auto] runReplyTranslate skip: no detectedCustomerLanguage');
+            return false;
+        }
 
         const replyHtml = replyArea.innerHTML || '';
         const { md: replyMarkdown, imgs: replyImgs } = htmlToMarkdownish(replyHtml);
         const englishSource = extractEnglishSourceFromMarkdown(replyMarkdown);
-        if (!englishSource) return false;
+        if (!englishSource) {
+            console.log('[zt-auto] runReplyTranslate skip: no englishSource');
+            return false;
+        }
+        console.log('[zt-auto] runReplyTranslate start', { englishSource: englishSource.slice(0, 60), targetLang: detectedCustomerLanguage });
 
         autoRetranslate.inProgress = true;
 
@@ -1507,6 +1546,7 @@
                 autoRetranslate.lastEnglish = englishSource;
                 attachAutoRetranslateListener(replyArea, triggerBtn);
             }
+            console.log('[zt-auto] runReplyTranslate end', { ok, lastEnglish: autoRetranslate.lastEnglish.slice(0, 60) });
 
             if (triggerBtn) {
                 triggerBtn.innerHTML = ok ? '✓' : '⚠️';
@@ -1815,6 +1855,7 @@
     }
 
     async function selectLanguageOverride(code) {
+        console.log('[zt-auto] selectLanguageOverride start', { code, prev: detectedCustomerLanguage });
         // Update the in-memory state and the ticket-wide lock so future
         // messages and reply translations default to the override. Also
         // refresh any open reply buttons so the flag emoji matches.
@@ -1840,7 +1881,9 @@
         // language run isn't filtered out as a no-change repeat of the
         // previous translation.
         autoRetranslate.lastEnglish = '';
+        console.log('[zt-auto] selectLanguageOverride about to runReplyTranslate', { code, englishSource: englishSource.slice(0, 60) });
         await runReplyTranslate(replyArea, findVisibleReplyButton());
+        console.log('[zt-auto] selectLanguageOverride done', { lastEnglish: autoRetranslate.lastEnglish.slice(0, 60), detectedLang: detectedCustomerLanguage });
     }
     
     function updateButtonContent(btn) {
