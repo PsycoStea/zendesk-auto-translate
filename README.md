@@ -89,7 +89,13 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.46 (current)
+### v1.0.47 (current)
+- **PDF interceptor actually intercepts now.** The v1.0.46 diagnostic logs revealed two reasons v1.0.45's interceptor missed every Zendesk attachment click:
+  - **URL detection too narrow.** Zendesk's attachment URLs look like `https://<subdomain>.zendesk.com/attachments/<token>/?name=Return+label.pdf`. The path is opaque; the filename only exists in the `?name=` query parameter. `looksLikePdfUrl` was only checking the path. Fixed: now also scans every URL query value for a `*.pdf` filename.
+  - **DOM scope check missed the actual attachment markup.** Field log showed `inZdComment: false, inOmniLogMessage: false` — neither selector matched the wrapper Zendesk uses for attachment links in current Omnichannel builds. Rather than chase the right selector (which Zendesk could change again), the URL pattern itself is now the trust signal: `/attachments/<token>/` on `*.zendesk.com` is unambiguously Zendesk's own attachment system, never a customer-typed link, so we trust the URL pattern alone and skip DOM ancestry checks for those. External PDF URLs (e.g. a public link pasted into a message) still go through the `.zd-comment` / `[data-test-id="omni-log-message-content"]` scope check so PDF links in the Refurbed 360 sidebar etc. keep native behavior.
+- **Diagnostic `[zt-pdf]` logs left in.** Still unconditional for one more cycle so we can verify the fix actually intercepts on your end. Will move under `ztDbg.log` (or be removed entirely) once confirmed working.
+
+### v1.0.46
 - **Diagnostic build for the PDF interceptor.** v1.0.45's PDF click interceptor isn't catching attachment clicks in the field — symptom: clicking a PDF in a customer/agent message briefly opens a new tab and downloads the file via Chrome's default behavior. v1.0.46 adds unconditional `[zt-pdf]` console logs on every anchor click so we can see (a) whether the listener fires at all, (b) whether the anchor is recognized as a PDF URL, (c) what container the anchor sits in (`.zd-comment` vs the broader `[data-test-id="omni-log-message-content"]` vs neither), and (d) the full `data-test-id` ancestry up to 8 levels. The scope check is also temporarily broadened to accept either `.zd-comment` *or* `[data-test-id="omni-log-message-content"]` so we can isolate "wrong selector" from "no anchor click at all". These logs run regardless of `ztDebug` for this version only and will be quieted in the next release once the root cause is known.
 
 ### v1.0.45

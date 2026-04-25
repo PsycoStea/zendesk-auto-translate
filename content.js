@@ -1661,23 +1661,49 @@
         if (!href || typeof href !== 'string') return false;
         try {
             const u = new URL(href, location.origin);
-            // Strip any query string before checking the extension —
-            // signed-URL attachments often have ?token=… after the path.
-            return /\.pdf$/i.test(u.pathname);
+            // Pathname-based: easy case ("…/foo.pdf").
+            if (/\.pdf$/i.test(u.pathname)) return true;
+            // Query-based (v1.0.47): Zendesk's own attachment redirector
+            // serves PDFs at `/attachments/<token>/?name=Foo.pdf` — the
+            // path is opaque, the filename only lives in the `?name=`
+            // value. Scan all query values rather than just `name` so
+            // we also match other Zendesk URL shapes if any.
+            for (const v of u.searchParams.values()) {
+                if (/\.pdf$/i.test(v)) return true;
+            }
+            return false;
         } catch (_) {
             // URL constructor rejects malformed hrefs (relative without
             // a base, etc.). Fall back to a simpler regex.
-            return /\.pdf(\?|#|$)/i.test(href);
+            return /\.pdf(\?|#|$|[^\w])/i.test(href);
         }
     }
 
+    function isZendeskAttachmentUrl(href) {
+        // Zendesk's attachment-serving redirector lives at
+        // `https://<subdomain>.zendesk.com/attachments/<token>/...`. A
+        // URL of that shape is unambiguously Zendesk's own attachment
+        // system — it's never used for navigation links the customer
+        // typed into a message — so we can trust the URL pattern alone
+        // as a "this is an in-ticket attachment" signal and skip DOM
+        // ancestry checks. (v1.0.46's diagnostic showed Zendesk's
+        // current attachment markup doesn't sit inside .zd-comment.)
+        if (!href) return false;
+        try {
+            const u = new URL(href, location.origin);
+            return /\.zendesk\.com$/i.test(u.hostname)
+                && u.pathname.startsWith('/attachments/');
+        } catch (_) { return false; }
+    }
+
     function isInsideMessageBody(el) {
-        // .zd-comment is the body container Zendesk uses for both
-        // customer and agent messages, and for internal notes (same
-        // markup, different styling). Scoping the interceptor here
-        // matches the user's explicit Phase 3 spec: PDFs in messages
-        // and internal notes only.
-        return !!(el.closest && el.closest('.zd-comment'));
+        // Fallback DOM scope for non-Zendesk-attachment PDF links —
+        // i.e. external PDFs a customer pasted into the message body.
+        // Either the legacy `.zd-comment` selector or the modern
+        // `[data-test-id="omni-log-message-content"]` covers customer
+        // and agent messages plus internal notes.
+        if (!(el && el.closest)) return false;
+        return !!(el.closest('.zd-comment') || el.closest('[data-test-id="omni-log-message-content"]'));
     }
 
     function openPdfModal(pdfUrl) {
@@ -1780,32 +1806,36 @@
             // chrome are too noisy to log.
             if (!anchor) return;
 
-            const inComment = !!(anchor.closest && anchor.closest('.zd-comment'));
-            const inMessage = !!(anchor.closest && anchor.closest('[data-test-id="omni-log-message-content"]'));
             const looksLikePdf = looksLikePdfUrl(anchor.href);
+            const isZdAttachment = isZendeskAttachmentUrl(anchor.href);
+            const inMessage = isInsideMessageBody(anchor);
 
             console.log('[zt-pdf] anchor click', {
                 href: anchor.href,
                 target: anchor.getAttribute('target'),
                 download: anchor.hasAttribute('download'),
-                inZdComment: inComment,
-                inOmniLogMessage: inMessage,
                 looksLikePdf,
+                isZdAttachment,
+                inMessage,
                 clickTargetTag: target && target.tagName,
-                clickTargetClass: target && target.className,
-                anchorInnerText: (anchor.innerText || '').slice(0, 80),
                 anchorTestId: anchor.getAttribute('data-test-id'),
                 ancestorTestIds: collectAncestorTestIds(anchor),
             });
 
             if (!looksLikePdf) return;
-            // v1.0.46: TEMPORARILY broadened the scope check from .zd-comment
-            // to also accept [data-test-id="omni-log-message-content"] so we
-            // can see if the issue is the scope check itself. Will narrow
-            // back once we know which selector matches actual attachment
-            // markup in current Zendesk.
-            if (!inComment && !inMessage) {
-                console.log('[zt-pdf] skip: anchor not in .zd-comment or omni-log-message-content');
+
+            // Two acceptable trigger paths (v1.0.47):
+            //   A. Zendesk's own attachment URL pattern. Trusted by URL
+            //      alone; DOM ancestry doesn't matter because the
+            //      `/attachments/<token>/` endpoint is exclusive to
+            //      Zendesk's attachment system.
+            //   B. External PDF URL inside a message body — covers the
+            //      rare case of a customer/agent pasting a public PDF
+            //      link into a message. Still gated on the DOM scope
+            //      check so PDF links elsewhere on the page (sidebar
+            //      apps, native fields) keep their default behavior.
+            if (!isZdAttachment && !inMessage) {
+                console.log('[zt-pdf] skip: not a Zendesk attachment and not in a message body');
                 return;
             }
 
