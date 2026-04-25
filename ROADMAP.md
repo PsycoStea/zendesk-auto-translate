@@ -160,9 +160,11 @@ If we want a future re-attempt, the right design would distinguish high-confiden
 
 ---
 
-## Phase 2 — UX features (target: weeks 2–3)
+## Phase 2 — UX features ✅ (target: weeks 2–3)
 
-Visible improvements agents will feel every day. No cross-dependencies inside Phase 2, but all build on Phase 1 (esp. ticket-wide language lock).
+Items resolved: #7, #8, #9, #11 shipped; #10 (country-code → language auto-select) cancelled because the country lives inside Refurbed 360's iframe (cross-origin).
+
+Visible improvements agents will feel every day. (Original spec assumed Phase 2 would build on Phase 1 #6 ticket-wide language lock — that lock was rolled back in v1.0.43, so the dropdown override (#8) ended up being the lone writer to `chrome.storage.local.ticketLanguages`. Detection runs per-message, dropdown writes persist, no auto-locking.)
 
 ### 7. ✅ Auto-retranslate on edit below `---` (from #2)
 
@@ -255,7 +257,9 @@ CZ → cs
 
 ---
 
-### 11. ⬜ Automated tests for markdown roundtrip (from #6)
+### 11. ✅ Automated tests for markdown roundtrip (from #6)
+
+Shipped in v1.0.44. Pure helpers (`htmlToMarkdownish`, `markdownishToHtml`, `protectUrls`, `restoreUrls`, `splitCommentAtFirstBlockquote`, `extractEnglishSourceFromMarkdown`, `stripMarkdownSyntax`, `escapeHtml`, `serializeNodeAsMarkdown`, `makeUrlToken`) extracted from `content.js` into `src/translate-core.js`, UMD-wrapped (browser exposes `window.__ztCore`; Node exposes `module.exports`). 44 test cases across 5 files in `tests/` cover adjacent-`<p>` round-trip, `<p><br></p>` sentinel, `<hr>` separator, formatting fidelity, URL token protection (incl. Wikipedia-style nested parens), `<img>` outerHTML preservation, blockquote-split (incl. nested + post-quote signature), English-source extraction from bilingual replies. GitHub Actions runs `npm test` on every push and PR to `main` and blocks merges when red. Local: `npm install && npm test`.
 
 **Effort:** ~3 hours initial setup + ongoing
 
