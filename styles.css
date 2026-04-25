@@ -140,16 +140,31 @@
  * Caret sits flush right of the flag button; menu pops below, fixed-
  * position so it floats above any Zendesk z-index layer and isn't
  * clipped by the toolbar's overflow.
+ *
+ * v1.0.38: force the wrapper to lay out horizontally regardless of
+ * what Zendesk's adjacent classes (sc-k83b6s-1 jXsvnN, which we copied
+ * for visual consistency with native toolbar buttons) decide to do —
+ * Zendesk has been observed flipping that class to flex-direction:
+ * column, which stacked our caret under the flag.
  */
+.zt-reply-wrapper {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0 !important;
+}
+
 .zt-reply-lang-caret {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 8px 6px;
+    padding: 8px 8px;
     color: #2f3941;
-    font-size: 11px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
     height: 32px;
-    min-width: 18px;
+    min-width: 24px;
     border-radius: 4px;
     transition: background-color 0.2s;
     display: flex;

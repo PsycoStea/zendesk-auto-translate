@@ -1571,7 +1571,11 @@
         const caretBtn = document.createElement('button');
         caretBtn.className = 'zt-reply-lang-caret';
         caretBtn.type = 'button';
-        caretBtn.innerHTML = '▾';
+        // v1.0.38: full-size BLACK DOWN-POINTING TRIANGLE (▼) at 13px+700
+        // weight. The previous BLACK DOWN-POINTING SMALL TRIANGLE (▾) at
+        // 11px was hard to read against the toolbar background — agents
+        // reported mistaking it for screen dust.
+        caretBtn.innerHTML = '▼';
         caretBtn.setAttribute('aria-label', 'Change reply language');
         caretBtn.setAttribute('aria-haspopup', 'listbox');
         caretBtn.setAttribute('aria-expanded', 'false');
@@ -1682,27 +1686,49 @@
         caretBtn.setAttribute('aria-expanded', 'true');
         openLangMenuEl = menu;
 
-        // Outside-click / Escape / scroll dismissal. Capture phase so we
-        // beat any inner click handler that would re-trigger the toggle
-        // logic. Defer attachment one tick so the click that opened the
-        // menu doesn't immediately close it.
-        const onDocClick = (ev) => {
-            if (menu.contains(ev.target)) return;
+        // Dismissal: outside-click and Escape. v1.0.38 redesign:
+        //
+        //   - Listen on `mousedown` rather than `click`. Item clicks
+        //     fire mousedown first, but we let those through via the
+        //     geometric check below; the actual selection still runs
+        //     on the item's `click` handler.
+        //
+        //   - Geometric bounding-rect check, not `menu.contains(target)`.
+        //     Native scrollbar mousedowns (Chrome) target
+        //     document.documentElement, not the scrolling element — so
+        //     contains() returns false and the menu would close when the
+        //     agent grabs the scrollbar. Comparing event coordinates
+        //     against the menu's rect captures the scrollbar area too,
+        //     since the rect includes it.
+        //
+        //   - No `scroll` listener. The previous one closed the menu
+        //     whenever the agent scrolled within the menu itself
+        //     (capture-phase scroll bubbles up to window), defeating
+        //     the scrollbar entirely. Trade-off: scrolling the Zendesk
+        //     page with the menu open will leave the (fixed-position)
+        //     menu disconnected from the caret. Acceptable — the agent
+        //     can click outside or press Escape to close.
+        //
+        //   - Defer attachment one tick so the click that opened the
+        //     menu doesn't immediately close it.
+        const onDocMouseDown = (ev) => {
             if (caretBtn.contains(ev.target)) return;  // caret toggle handles itself
+            const rect = menu.getBoundingClientRect();
+            const x = ev.clientX, y = ev.clientY;
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                return;  // inside the menu (incl. its scrollbar gutter)
+            }
             closeLanguageMenu();
         };
         const onKey = (ev) => { if (ev.key === 'Escape') closeLanguageMenu(); };
-        const onScroll = () => closeLanguageMenu();
         const attachId = setTimeout(() => {
-            document.addEventListener('click', onDocClick, true);
+            document.addEventListener('mousedown', onDocMouseDown, true);
             document.addEventListener('keydown', onKey, true);
-            window.addEventListener('scroll', onScroll, true);
         }, 0);
         openLangMenuCleanup = () => {
             clearTimeout(attachId);
-            document.removeEventListener('click', onDocClick, true);
+            document.removeEventListener('mousedown', onDocMouseDown, true);
             document.removeEventListener('keydown', onKey, true);
-            window.removeEventListener('scroll', onScroll, true);
         };
     }
 

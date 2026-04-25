@@ -81,7 +81,14 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.37 (current)
+### v1.0.38 (current)
+- **Language-override dropdown bugfixes (v1.0.36 fallout).** Four issues that surfaced once the dropdown hit real Zendesk traffic:
+  - **Caret stacked under the flag instead of beside it.** The wrapper inherited `.sc-k83b6s-1.jXsvnN` from Zendesk's toolbar; that class evidently switched to `flex-direction: column` in the current Zendesk build, so our two children stacked vertically. `.zt-reply-wrapper` now forces `display: inline-flex; flex-direction: row; align-items: center` with `!important` to override Zendesk's class regardless of which way they flip it.
+  - **Caret too small (read as "screen dust").** Bumped the glyph from `▾` (BLACK DOWN-POINTING SMALL TRIANGLE) at 11px to `▼` (full-size BLACK DOWN-POINTING TRIANGLE) at 13px / weight 700, with wider min-width and padding.
+  - **Scrolling within the dropdown closed it.** The previous `scroll` listener was attached on `window` in capture phase, so a wheel event inside the menu's overflow region bubbled up and tripped the dismissal. Listener removed entirely. Trade-off: scrolling the Zendesk page with the menu open will leave the (fixed-position) menu visually disconnected from the caret; the agent can click outside or press Escape to close.
+  - **Clicking the scrollbar closed the dropdown.** Native scrollbar mousedowns in Chrome target `document.documentElement`, not the scrolling element — so the previous `menu.contains(target)` check returned false and dismissed the menu. Replaced with a geometric `getBoundingClientRect()` check that captures the scrollbar gutter (which lives within the menu's bounding rect even though it isn't a DOM child). Switched the trigger event from `click` to `mousedown` for consistency.
+
+### v1.0.37
 - **Images preserved through translation.** Embedded `<img>` tags in customer messages and agent replies now survive the full HTML → markdown → translate → HTML roundtrip with every attribute intact (`src`, `alt`, `width`, `height`, inline `style`). Mechanism mirrors the existing URL-token protector: during serialization, each image is replaced with a `{{ztimgN}}` token while its `outerHTML` is captured into a per-call array; the token rides through the translator as plain text (Google and LibreTranslate both preserve the `{{...}}` shape verbatim, same way they preserve `{{ticket.requester.first_name}}` and `{{ztlinkN}}`); on rehydration, `markdownishToHtml(md, imgs)` swaps the tokens back to the original markup. `htmlToMarkdownish` now returns `{md, imgs}` instead of a bare string — change-detection callers extract `.md`, full-roundtrip callers thread both through. Alt text is intentionally not translated (low value to sighted users; non-zero risk of ungrammatical phrasing in the target language).
 
 ### v1.0.36
