@@ -34,9 +34,9 @@ Update each item's emoji as work progresses, and the phase headers at the top of
 
 ---
 
-## Phase 1 — Quick wins ✅ (target: week 1)
+## Phase 1 — Quick wins (target: week 1)
 
-All items resolved as of v1.0.34: #1, #2, #3, #5, #6 shipped; #4 (service worker keep-alive) deferred until field symptoms warrant it.
+Items resolved: #1, #2, #3, #5 shipped; #4 (service worker keep-alive) deferred until field symptoms warrant it; **#6 (ticket-wide language lock) shipped in v1.0.34 then rolled back in v1.0.43** after field reports of mis-detected tickets locking to the wrong language. See item #6 below for the full post-mortem.
 
 Small, localized changes. Each ships as its own version so the team can pull updates incrementally during this phase. No dependencies between Phase 1 items.
 
@@ -132,9 +132,20 @@ requestAnimationFrame(() => {
 
 ---
 
-### 6. ✅ Ticket-wide language lock (from #4)
+### 6. 🚫 Ticket-wide language lock (from #4) — rolled back in v1.0.43
 
-Shipped in v1.0.34. First confident detection per ticket (anything not 'unknown') is written to `chrome.storage.local.ticketLanguages` keyed by ticket ID. Subsequent messages in the same ticket short-circuit straight to the locked language — zero detection API calls. Per-message `data-zt-lang` kept as a secondary cache for messages in hidden ticket panels (where `getTicketIdFromUrl()` can't safely identify the owning ticket). Future Phase 2 #8 dropdown writes to the same map for manual override.
+Shipped in v1.0.34, rolled back in v1.0.43 after field testing.
+
+**Original implementation:** first confident detection per ticket (anything not 'unknown') was written to `chrome.storage.local.ticketLanguages` keyed by ticket ID. Subsequent messages short-circuited the locked language. Goal: save detection API calls and stabilize multi-message tickets.
+
+**Why it was rolled back:** the lock conflated "first detection" with "ground truth," and short or ambiguous first messages (an order ID, "Hi", an address) are precisely the cases where detection is least reliable. A single bad first guess then forced every subsequent message in the ticket through the wrong language. Reported symptoms:
+- English customer messages in tickets locked to a non-English language got "translated" to garbled English.
+- A German ticket's reply flag stayed stuck on Finnish after one bad detection.
+- v1.0.40's `'en'` exclusion only addressed half the problem.
+
+**Replacement behavior (v1.0.43):** each customer message detects independently; per-message `data-zt-lang` cache prevents redundant API calls per message. The `ticketLanguages` map still exists, but auto-detection no longer writes to it; the caret dropdown (#8) is the only writer, so manual overrides still persist deliberately. A one-time migration on upgrade clears all existing entries.
+
+If we want a future re-attempt, the right design would distinguish high-confidence detections (long messages, multiple corroborating samples) from low-confidence ones, and only lock on the former.
 
 **Effort:** ~45 min
 

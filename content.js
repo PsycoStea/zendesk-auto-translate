@@ -117,7 +117,7 @@
     }
 
     chrome.storage.local.get(
-        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats', 'ztDebug', 'ticketLanguages'],
+        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats', 'ztDebug', 'ticketLanguages', 'ztMigrations'],
         (result) => {
             isEnabled = result.enabled !== false;
             translationMemory = result.translationMemory || {};
@@ -125,22 +125,27 @@
             settings.libretranslateApiKey = result.libretranslateApiKey || '';
             ztDebug = !!result.ztDebug;
             ticketLanguages = (result.ticketLanguages && typeof result.ticketLanguages === 'object') ? result.ticketLanguages : {};
-            // v1.0.40 migration: strip any 'en' entries written by
-            // v1.0.34–v1.0.39's auto-detection. Those entries lock the
-            // reply flag to the English emoji even on tickets whose later
-            // customer messages are in another language, because Phase 1
-            // #6's lock is permanent. New code skips writing 'en' (see
-            // processCustomerMessage); this cleans up the historical
-            // damage on first load after upgrade.
-            {
-                let migrated = false;
-                for (const tid of Object.keys(ticketLanguages)) {
-                    if (ticketLanguages[tid] === 'en') {
-                        delete ticketLanguages[tid];
-                        migrated = true;
-                    }
-                }
-                if (migrated) persistTicketLanguages();
+
+            // v1.0.43 one-time migration: clear all auto-populated
+            // ticketLanguages entries. Phase 1 #6's lock is rolled back
+            // (see release notes) — historical entries are mostly first-
+            // message auto-detections, some of which were wrong and
+            // forced subsequent messages through the bad lock. We can't
+            // distinguish auto-set from manually-overridden post-hoc,
+            // so we clear everything once. Manual dropdown overrides
+            // made *after* this upgrade will persist normally (the
+            // dropdown writes to the same map; subsequent loads see the
+            // migration flag and skip the clear).
+            //
+            // Gated by ztMigrations.clearTicketLockV2 so it runs exactly
+            // once per browser profile.
+            const migrations = (result.ztMigrations && typeof result.ztMigrations === 'object') ? result.ztMigrations : {};
+            if (!migrations.clearTicketLockV2) {
+                const cleared = Object.keys(ticketLanguages).length;
+                ticketLanguages = {};
+                migrations.clearTicketLockV2 = true;
+                safeStorageSet({ ticketLanguages: {}, ztMigrations: migrations });
+                if (cleared) console.log(`[zt] v1.0.43 migration: cleared ${cleared} stale ticket-language lock entries`);
             }
             if (result.cacheStats && typeof result.cacheStats === 'object') {
                 cacheStats.hits = Number(result.cacheStats.hits) || 0;
@@ -699,53 +704,28 @@
         const { md: sourceMarkdown, imgs: sourceImgs } = htmlToMarkdownish(beforeHtml);
         if (!sourceMarkdown.trim()) return;  // Nothing to translate (e.g. only a forwarded quote).
 
-        // Detection precedence:
-        //   1. Per-message data-zt-lang (already detected on this element).
-        //   2. Ticket-wide lock from chrome.storage.local.ticketLanguages —
-        //      but only when this message is in the currently visible
-        //      ticket panel. Zendesk keeps multiple tickets in the same
-        //      DOM and getTicketIdFromUrl() only knows the active one, so
-        //      applying ticket A's lock to a hidden ticket B's message
-        //      would mis-translate.
-        //   3. Provider call. After detection, persist a non-'unknown'
-        //      result to the ticket lock so future messages on this same
-        //      ticket skip detection.
+        // Per-message detection (v1.0.43 — Phase 1 #6 rolled back).
+        //
+        // Detection used to short-circuit through a ticket-wide lock
+        // populated from the first non-English detection. In practice
+        // that often locked the wrong language: short or ambiguous
+        // first messages (an order ID, "Hi", an address) detect as the
+        // wrong thing, and from then on every message in the ticket
+        // was forced through the bad lock. Field reports: English
+        // customer replies "translated" to garbled English; a German
+        // ticket's reply flag stuck on Finnish.
+        //
+        // Each customer message now detects independently. The per-
+        // message result is cached in `data-zt-lang` so repeat scans
+        // (poll tick, ticket switch back) don't burn fresh API calls.
+        // The ticket-wide ticketLanguages map is still read by
+        // addReplyTranslateButton for *manual* overrides set via the
+        // caret dropdown — those remain a deliberate, persistent user
+        // action — but auto-detection no longer writes to it.
         let langCode = messageElement.dataset.ztLang;
         if (!langCode) {
-            const ticketId = getTicketIdFromUrl();
-            const visible = isElementVisible(messageElement);
-
-            if (ticketId && visible && ticketLanguages[ticketId]) {
-                langCode = ticketLanguages[ticketId];
-                messageElement.dataset.ztLang = langCode;
-            } else {
-                langCode = await detectLanguage(textContent);
-                messageElement.dataset.ztLang = langCode;
-                // Persist only confident, non-English detections from the
-                // visible ticket. 'unknown' means the providers couldn't
-                // decide. 'en' is excluded on purpose (v1.0.40): a short
-                // first message — a number, an address, "ok thanks" —
-                // detects as English even on tickets whose later messages
-                // are clearly in another language. Caching 'en' here
-                // would lock the ticket out of further detection forever
-                // (Phase 1 #6 lock is permanent), and the reply flag
-                // would freeze on the English flag emoji. Skipping 'en'
-                // means subsequent customer messages get re-detected
-                // until a non-English one wins; the per-message
-                // data-zt-lang cache still avoids redundant API calls
-                // for messages we've already seen.
-                if (
-                    visible
-                    && ticketId
-                    && langCode
-                    && langCode !== 'unknown'
-                    && langCode !== 'en'
-                    && ticketLanguages[ticketId] !== langCode
-                ) {
-                    ticketLanguages[ticketId] = langCode;
-                    persistTicketLanguages();
-                }
-            }
+            langCode = await detectLanguage(textContent);
+            messageElement.dataset.ztLang = langCode;
         }
         if (langCode === 'en') return;
 
