@@ -187,6 +187,22 @@
         if (changes.ticketLanguages && changes.ticketLanguages.newValue) {
             ticketLanguages = changes.ticketLanguages.newValue;
         }
+        if (changes.macros) {
+            macros = (changes.macros.newValue && typeof changes.macros.newValue === 'object')
+                ? changes.macros.newValue
+                : {};
+            // If the dropdown is open while macros change, refresh its
+            // filtered list — the agent might have just renamed a
+            // macro from another tab.
+            if (macroAutocomplete.menu) {
+                macroAutocomplete.items = filterMacrosByPartial(macroAutocomplete.partial);
+                macroAutocomplete.activeIndex = Math.min(
+                    macroAutocomplete.activeIndex,
+                    Math.max(0, macroAutocomplete.items.length - 1)
+                );
+                renderMacroMenu();
+            }
+        }
         // If another Zendesk tab (or a service worker) updated the cache
         // stats, pick up the newer value. Guard against our own pending
         // write losing counts — only take the incoming value if it's at
@@ -1921,12 +1937,393 @@
     }
 
     // ============================================
+    // MACRO AUTOCOMPLETE (Phase 4 #13)
+    // ============================================
+    //
+    // Trigger: agent types `//partial` in the composer; we show a
+    // dropdown filtered by substring match against the saved macro
+    // names; agent picks one with arrow-keys+Enter or click; we replace
+    // the `//partial` fragment with the macro body via the same
+    // synthetic-paste pipeline reply translation uses (so CKEditor
+    // accepts the HTML and the formatting roundtrips correctly).
+    //
+    // Macros live at chrome.storage.local.macros (managed via the
+    // settings page at macros.html, opened from the popup). Storage
+    // shape:
+    //   { "<name>": { body: "<html>", attachments: [], updated: <ts> } }
+    //
+    // Placeholders like {{ticket.requester.first_name}} pass through
+    // verbatim — we don't resolve them; Zendesk substitutes at send
+    // time.
+
+    // Module-level cache of macros, kept in sync via storage.onChanged
+    // so the autocomplete picks up edits made in another tab without
+    // requiring the agent to refresh Zendesk.
+    let macros = {};
+
+    function loadMacrosFromStorage() {
+        chrome.storage.local.get(['macros'], (r) => {
+            if (r && r.macros && typeof r.macros === 'object') {
+                macros = r.macros;
+            }
+        });
+    }
+
+    // -----------------------------
+    // Trigger detection
+    // -----------------------------
+
+    // Module-level state for the open dropdown. Only one composer is
+    // visible at a time so a single object suffices (same pattern as
+    // autoRetranslate / openLangMenuEl).
+    const macroAutocomplete = {
+        menu: null,            // dropdown element when open
+        composer: null,        // composer the dropdown is anchored to
+        partial: '',           // current `partial` text (after the //)
+        partialStart: null,    // { node, offset } where the // begins
+        items: [],             // filtered macro names currently displayed
+        activeIndex: 0,        // arrow-key cursor
+        cleanup: null,         // listener teardown function
+    };
+
+    function isMacroNameChar(ch) {
+        return /[A-Za-z0-9_-]/.test(ch);
+    }
+
+    // Walk back from the current selection caret looking for `//` and
+    // return { partial, range } if we find a valid trigger fragment in
+    // the same text node. Returns null otherwise (no //, // is mid-URL,
+    // partial contains a non-name char, etc).
+    function findMacroTriggerAtCaret(composer) {
+        const sel = composer.ownerDocument.getSelection();
+        if (!sel || sel.rangeCount === 0) return null;
+        const range = sel.getRangeAt(0);
+        if (!range.collapsed) return null;  // active selection — no trigger
+        const node = range.startContainer;
+        if (node.nodeType !== Node.TEXT_NODE) return null;
+        const offset = range.startOffset;
+        const text = node.data || '';
+
+        // Walk back from the caret. Accept name chars; stop at `/`,
+        // whitespace, or other punctuation. The `//` must be immediately
+        // before the partial (or at the beginning of the partial if
+        // empty).
+        let i = offset;
+        while (i > 0 && isMacroNameChar(text.charAt(i - 1))) i--;
+        // i now points to the start of the partial (or to the offset
+        // itself if the caret sits right after `//`).
+        if (i < 2) return null;
+        if (text.charAt(i - 1) !== '/' || text.charAt(i - 2) !== '/') return null;
+
+        // Make sure `//` isn't part of a URL or other glued sequence —
+        // require either start of node, or a whitespace/punctuation
+        // boundary, immediately before the `//`. (Catches things like
+        // `https://foo` or `path//bar` not being treated as triggers.)
+        if (i - 2 > 0) {
+            const before = text.charAt(i - 3);
+            if (!/[\s(\[{>]/.test(before)) return null;
+        }
+
+        const partial = text.slice(i, offset);
+        const triggerStart = i - 2;  // the position of the first `/`
+        const triggerRange = composer.ownerDocument.createRange();
+        triggerRange.setStart(node, triggerStart);
+        triggerRange.setEnd(node, offset);
+        return { partial, range: triggerRange };
+    }
+
+    // -----------------------------
+    // Dropdown UI
+    // -----------------------------
+
+    function closeMacroMenu() {
+        if (macroAutocomplete.cleanup) {
+            try { macroAutocomplete.cleanup(); } catch (_) {}
+            macroAutocomplete.cleanup = null;
+        }
+        if (macroAutocomplete.menu) {
+            macroAutocomplete.menu.remove();
+            macroAutocomplete.menu = null;
+        }
+        macroAutocomplete.composer = null;
+        macroAutocomplete.partial = '';
+        macroAutocomplete.partialStart = null;
+        macroAutocomplete.items = [];
+        macroAutocomplete.activeIndex = 0;
+    }
+
+    function filterMacrosByPartial(partial) {
+        const all = Object.keys(macros);
+        if (!partial) return all.sort((a, b) => a.localeCompare(b));
+        const needle = partial.toLowerCase();
+        return all
+            .filter(n => n.toLowerCase().includes(needle))
+            .sort((a, b) => {
+                // Prefix matches first, then alphabetical.
+                const aPrefix = a.toLowerCase().startsWith(needle);
+                const bPrefix = b.toLowerCase().startsWith(needle);
+                if (aPrefix && !bPrefix) return -1;
+                if (!aPrefix && bPrefix) return 1;
+                return a.localeCompare(b);
+            });
+    }
+
+    function renderMacroMenu() {
+        const menu = macroAutocomplete.menu;
+        if (!menu) return;
+        menu.innerHTML = '';
+        const items = macroAutocomplete.items;
+        if (items.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'zt-macro-menu-empty';
+            empty.textContent = macroAutocomplete.partial
+                ? `No macros match "${macroAutocomplete.partial}".`
+                : 'No macros yet — open the popup → Manage macros.';
+            menu.appendChild(empty);
+            return;
+        }
+        items.forEach((name, idx) => {
+            const item = document.createElement('div');
+            item.className = 'zt-macro-menu-item';
+            if (idx === macroAutocomplete.activeIndex) item.classList.add('zt-macro-menu-item-active');
+            item.setAttribute('role', 'option');
+            item.setAttribute('aria-selected', idx === macroAutocomplete.activeIndex ? 'true' : 'false');
+
+            const slash = document.createElement('span');
+            slash.className = 'zt-macro-menu-slash';
+            slash.textContent = '//';
+            item.appendChild(slash);
+
+            const label = document.createElement('span');
+            label.className = 'zt-macro-menu-name';
+            label.textContent = name;
+            item.appendChild(label);
+
+            item.addEventListener('mousedown', (ev) => {
+                // mousedown not click: composer would lose focus on
+                // click, collapsing the saved selection range. We
+                // commit the insertion synchronously here.
+                ev.preventDefault();
+                ev.stopPropagation();
+                macroAutocomplete.activeIndex = idx;
+                commitSelectedMacro();
+            });
+            menu.appendChild(item);
+        });
+    }
+
+    function positionMacroMenu(triggerRange) {
+        const menu = macroAutocomplete.menu;
+        if (!menu || !triggerRange) return;
+        const rect = triggerRange.getBoundingClientRect();
+        // Anchor below the // by default; flip above if too close to
+        // viewport bottom.
+        const menuHeight = Math.min(menu.scrollHeight || 240, 240);
+        const spaceBelow = window.innerHeight - rect.bottom;
+        if (spaceBelow >= menuHeight + 8 || spaceBelow >= rect.top) {
+            menu.style.top = `${rect.bottom + 4}px`;
+        } else {
+            menu.style.top = `${Math.max(8, rect.top - menuHeight - 4)}px`;
+        }
+        // Left-align the menu with the //. Clamp to viewport.
+        const desiredLeft = rect.left;
+        const maxLeft = window.innerWidth - 280 - 8;
+        menu.style.left = `${Math.max(8, Math.min(desiredLeft, maxLeft))}px`;
+    }
+
+    function openOrUpdateMacroMenu(composer, trigger) {
+        macroAutocomplete.composer = composer;
+        macroAutocomplete.partial = trigger.partial;
+        macroAutocomplete.partialStart = {
+            node: trigger.range.startContainer,
+            offset: trigger.range.startOffset,
+        };
+        macroAutocomplete.items = filterMacrosByPartial(trigger.partial);
+        macroAutocomplete.activeIndex = Math.min(
+            macroAutocomplete.activeIndex,
+            Math.max(0, macroAutocomplete.items.length - 1)
+        );
+
+        if (!macroAutocomplete.menu) {
+            const menu = document.createElement('div');
+            menu.className = 'zt-macro-menu';
+            menu.setAttribute('role', 'listbox');
+            menu.setAttribute('aria-label', 'Macro suggestions');
+            document.body.appendChild(menu);
+            macroAutocomplete.menu = menu;
+
+            // Dismissal listeners: outside-click + Escape (handled by
+            // the keydown capture listener below, which also drives
+            // arrow-keys + Enter).
+            const onDocMouseDown = (ev) => {
+                if (!macroAutocomplete.menu) return;
+                if (macroAutocomplete.menu.contains(ev.target)) return;
+                if (composer.contains(ev.target)) return;  // typing in composer keeps it open
+                closeMacroMenu();
+            };
+            document.addEventListener('mousedown', onDocMouseDown, true);
+            macroAutocomplete.cleanup = () => {
+                document.removeEventListener('mousedown', onDocMouseDown, true);
+            };
+        }
+
+        renderMacroMenu();
+        positionMacroMenu(trigger.range);
+    }
+
+    function moveMacroSelection(delta) {
+        if (!macroAutocomplete.menu) return;
+        const len = macroAutocomplete.items.length;
+        if (len === 0) return;
+        macroAutocomplete.activeIndex = (macroAutocomplete.activeIndex + delta + len) % len;
+        renderMacroMenu();
+        // Keep the active item in view.
+        const active = macroAutocomplete.menu.querySelector('.zt-macro-menu-item-active');
+        if (active && active.scrollIntoView) {
+            active.scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    // -----------------------------
+    // Insertion
+    // -----------------------------
+
+    function commitSelectedMacro() {
+        const name = macroAutocomplete.items[macroAutocomplete.activeIndex];
+        const composer = macroAutocomplete.composer;
+        const startInfo = macroAutocomplete.partialStart;
+        if (!name || !composer || !startInfo) {
+            closeMacroMenu();
+            return;
+        }
+        const macro = macros[name];
+        if (!macro || !macro.body) {
+            closeMacroMenu();
+            return;
+        }
+
+        // Reconstruct the trigger range from the saved start position +
+        // current caret. The caret may have moved if the user typed more
+        // since the dropdown opened.
+        const sel = composer.ownerDocument.getSelection();
+        if (!sel || sel.rangeCount === 0) {
+            closeMacroMenu();
+            return;
+        }
+        const caretRange = sel.getRangeAt(0);
+        const replaceRange = composer.ownerDocument.createRange();
+        try {
+            replaceRange.setStart(startInfo.node, startInfo.offset);
+            replaceRange.setEnd(caretRange.startContainer, caretRange.startOffset);
+        } catch (err) {
+            console.warn('[zt-macro] could not build replace range:', err);
+            closeMacroMenu();
+            return;
+        }
+
+        // Select the trigger fragment, then dispatch a synthetic paste.
+        // CKEditor 5 picks up the paste, replaces the selection with
+        // the HTML, and runs its own normalization. This is the same
+        // mechanism the reply-translate flow uses.
+        sel.removeAllRanges();
+        sel.addRange(replaceRange);
+
+        try {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', textOnly(macro.body));
+            dt.setData('text/html', macro.body);
+            const pasteEvent = new ClipboardEvent('paste', {
+                clipboardData: dt,
+                bubbles: true,
+                cancelable: true,
+            });
+            composer.dispatchEvent(pasteEvent);
+            ztDbg.log('[zt-macro] inserted', name, '(', macro.body.length, 'chars )');
+        } catch (err) {
+            console.error('[zt-macro] paste dispatch failed:', err);
+            // Fallback: insertHTML (deprecated but works in current
+            // Chromium for contenteditable).
+            try {
+                composer.ownerDocument.execCommand('insertHTML', false, macro.body);
+            } catch (_) {}
+        }
+        closeMacroMenu();
+    }
+
+    function textOnly(html) {
+        // Strip tags for the text/plain payload — used as a fallback by
+        // pasters that don't honor text/html. Good enough for the
+        // synthetic paste; CKEditor uses text/html when available.
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html || '';
+        return (tmp.innerText || tmp.textContent || '').trim();
+    }
+
+    // -----------------------------
+    // Document-level listeners
+    // -----------------------------
+
+    function installMacroAutocomplete() {
+        if (window.__ztMacroAutocompleteInstalled) return;
+        window.__ztMacroAutocompleteInstalled = true;
+
+        // Recompute trigger on every input. Cheap: a single Selection
+        // walk over the text node containing the caret.
+        const onInput = (ev) => {
+            if (!isEnabled) { closeMacroMenu(); return; }
+            const composer = ev.target && ev.target.closest
+                ? ev.target.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]')
+                : null;
+            if (!composer) { closeMacroMenu(); return; }
+            if (!isElementVisible(composer)) { closeMacroMenu(); return; }
+
+            const trigger = findMacroTriggerAtCaret(composer);
+            if (!trigger) {
+                closeMacroMenu();
+                return;
+            }
+            openOrUpdateMacroMenu(composer, trigger);
+        };
+        document.addEventListener('input', onInput, true);
+
+        // Keyboard navigation. Capture phase so we beat CKEditor's own
+        // handlers (which would otherwise eat ArrowDown / Enter).
+        const onKeyDown = (ev) => {
+            if (!macroAutocomplete.menu) return;
+            switch (ev.key) {
+                case 'ArrowDown':
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    moveMacroSelection(1);
+                    break;
+                case 'ArrowUp':
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    moveMacroSelection(-1);
+                    break;
+                case 'Enter':
+                case 'Tab':
+                    if (macroAutocomplete.items.length === 0) {
+                        closeMacroMenu();
+                        return;
+                    }
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    commitSelectedMacro();
+                    break;
+                case 'Escape':
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    closeMacroMenu();
+                    break;
+            }
+        };
+        document.addEventListener('keydown', onKeyDown, true);
+    }
+
+    // ============================================
     // INITIALIZATION
     // ============================================
-
-    let mainObserver = null;
-    let pollTimer = null;
-    let currentTicketId = null;
 
     function getTicketIdFromUrl() {
         const m = location.pathname.match(/\/agent\/tickets\/(\d+)/);
@@ -1947,6 +2344,8 @@
         // Drop any open language-override menu — its anchor button was
         // just removed.
         closeLanguageMenu();
+        // Drop any open macro autocomplete dropdown for the same reason.
+        closeMacroMenu();
     }
 
     // Before removing UI, put back the original .zd-comment contents for
@@ -1991,6 +2390,10 @@
         // Same pattern for the PDF link interceptor — single document-
         // level listener, self-gates on isEnabled.
         installPdfClickInterceptor();
+        // Macro autocomplete (Phase 4 #13). Same pattern: one document-
+        // level listener, self-gates on isEnabled.
+        installMacroAutocomplete();
+        loadMacrosFromStorage();
 
         mainObserver = new MutationObserver(scanAndAttach);
         mainObserver.observe(document.body, {
@@ -2030,6 +2433,7 @@
         clearAutoRetranslateState();
         closeLanguageMenu();
         closePdfModal();
+        closeMacroMenu();
     }
 
 })();

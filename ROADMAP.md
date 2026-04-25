@@ -302,7 +302,13 @@ Shipped in v1.0.45. Mozilla PDF.js v5.6.205 prebuilt dist bundled at `lib/pdfjs/
 
 The largest single feature. Split into three incremental releases so something ships before everything is done.
 
-### 13. ⬜ Custom macros — local-only (from #10, v1)
+### 13. ✅ Custom macros — local-only (from #10, v1)
+
+Shipped in v1.0.52. Storage at `chrome.storage.local.macros` keyed by macro name. Settings page at `macros.html` (opened via the popup's "Manage macros…" button) provides a contenteditable rich-text editor with bold/italic/underline/list/link/unlink/clear toolbar, save/delete, filter-as-you-type sidebar list, Cmd-S save shortcut, and unsaved-changes guard on tab close. Composer-side: `//partial` typed in the Zendesk reply composer opens a dropdown anchored at the caret, filtered by substring with prefix matches first. Arrow keys navigate, Enter / Tab / mouse-click commits, Escape dismisses. Selection replaces the `//partial` fragment via the same synthetic-paste pipeline reply translation uses, so CKEditor accepts the HTML and formatting roundtrips correctly. Zendesk placeholders (`{{ticket.requester.first_name}}` etc.) pass through verbatim. Cross-tab edits flow into the running autocomplete via `storage.onChanged`.
+
+Resolved open questions:
+- **Prefix conflicts:** prefix matches first, then alphabetical. (Most-recently-used left for a v2 enhancement once we have field signal on whether it's actually noticed.)
+- **Nested macros:** not supported. The macro body is inserted verbatim; no recursive `//macro` expansion.
 
 **Effort:** ~10 hours
 

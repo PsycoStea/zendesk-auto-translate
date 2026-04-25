@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = document.getElementById('saveBtn');
     const saveMsg = document.getElementById('saveMsg');
     const clearCacheBtn = document.getElementById('clearCacheBtn');
+    const manageMacrosBtn = document.getElementById('manageMacrosBtn');
 
     chrome.storage.local.get(
         ['enabled', 'libretranslateUrl', 'libretranslateApiKey'],
@@ -100,6 +101,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 3000);
             }
         );
+    });
+
+    // Manage macros (Phase 4 #13). Opens the macros editor in a new
+    // tab. The page is at chrome-extension://<id>/macros.html, an
+    // extension page with full chrome.* API access — it reads/writes
+    // chrome.storage.local.macros directly, no message passing
+    // through this popup needed.
+    manageMacrosBtn.addEventListener('click', () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('macros.html') });
+        // Close the popup so the agent ends up focused on the new tab.
+        window.close();
     });
 
     clearCacheBtn.addEventListener('click', () => {

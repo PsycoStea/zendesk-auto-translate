@@ -326,6 +326,60 @@
 }
 
 /*
+ * Macro autocomplete dropdown (Phase 4 #13). Anchored near the // in
+ * the composer; fixed-position so it floats above any Zendesk z-index
+ * layer. Mirrors the language-override dropdown's visual pattern
+ * (Phase 2 #8) for consistency.
+ */
+.zt-macro-menu {
+    position: fixed;
+    z-index: 99999;
+    background: white;
+    border: 1px solid #d8dcde;
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    max-height: 240px;
+    overflow-y: auto;
+    width: 280px;
+    padding: 4px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+}
+
+.zt-macro-menu-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    color: #2f3941;
+    user-select: none;
+    line-height: 1.2;
+}
+.zt-macro-menu-item:hover { background-color: #f3f4f6; }
+.zt-macro-menu-item-active {
+    background-color: #eff6ff;
+}
+
+.zt-macro-menu-slash {
+    color: #9ca3af;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+}
+.zt-macro-menu-name {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.zt-macro-menu-empty {
+    padding: 10px 12px;
+    color: #68737d;
+    font-size: 12px;
+    font-style: italic;
+}
+
+/*
  * Narrow-viewport fallback: on screens too small for the 2/3-width
  * window (rare for an agent monitor, but covers laptops in coffee-
  * shop mode), shrink margins and let the close sit inside the

@@ -18,6 +18,8 @@ Internal Chrome extension for the **Mac Group Global** customer service team. Au
   - **LibreTranslate** — your own self-hosted server. Configure URL + optional API key in the popup; Chrome prompts once for permission to reach the host.
 - Enable/disable toggle that correctly re-renders UI on existing messages when toggled back on.
 - Inline error toasts for timeouts, HTTP failures, or missing configuration.
+- **Custom macros**: type `//` followed by a macro name in the reply composer to insert a saved snippet. Manage them via the popup's "Manage macros…" button. Zendesk placeholders pass through verbatim.
+- **In-page PDF viewer**: click a PDF attachment in any message and it opens in a fullscreen modal (Mozilla PDF.js) instead of downloading.
 
 ---
 
@@ -42,8 +44,13 @@ content.js             Runs on *.zendesk.com — UI, provider dispatch, reply-pa
 src/translate-core.js  Pure helpers (HTML↔markdown, URL/img tokens, blockquote split). Exposed
                        as window.__ztCore in the browser; require()-able under Node for tests
 background.js          Service worker — installs defaults, dispatches keyboard shortcut
-popup.html / popup.js  Toolbar popup: toggle, fallback config, cache stats, Clear cache
-styles.css             UI styling — badges, toasts, language dropdown, PDF modal
+popup.html / popup.js  Toolbar popup: toggle, fallback config, cache stats, Clear cache,
+                       Manage macros button
+macros.html /          Macros editor: opens in a tab from the popup; rich-text body,
+  macros.js /            filter list, save/delete; reads/writes chrome.storage.local.macros
+  macros.css
+styles.css             UI styling — badges, toasts, language dropdown, PDF modal,
+                       composer macro autocomplete
 lib/pdfjs/             Bundled Mozilla PDF.js (v5.6.205) — used by the in-page PDF viewer
 icon*.png              Extension icons
 package.json           Test harness only (jsdom devDep, node:test runner) — extension itself
@@ -89,7 +96,15 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.51 (current)
+### v1.0.52 (current)
+- **Custom macros (Phase 4 #13).** Shipped the largest single feature on the v2 roadmap. Two halves:
+  - **Settings page (`macros.html`).** Opened from the popup via a new "Manage macros…" button — runs as a regular extension page in a new tab so there's room for a real editor. Filter-as-you-type list of saved macros on the left; on the right, a contenteditable rich-text editor with a bold/italic/underline/list/link/unlink/clear toolbar (`document.execCommand`-driven; deprecated but the simplest path that works in every current Chromium and is plenty for the macro-body scope). Name field validates to letters/numbers/hyphens/underscores. Save / Delete buttons; Cmd+S / Ctrl+S saves from anywhere on the page; `beforeunload` guards against losing unsaved changes. Cross-tab edits flow back via `storage.onChanged`.
+  - **Composer autocomplete (in `content.js`).** Type `//` followed by the start of a macro name in the Zendesk reply composer and a dropdown anchored at the caret shows the matches — filtered by substring, prefix matches first then alphabetical. Arrow keys + Enter (or Tab) selects; mouse click selects; Escape dismisses. Selection replaces the `//partial` fragment via the same synthetic-paste mechanism reply translation uses, so CKEditor receives proper HTML and formatting (bold, italic, lists, links) round-trips through the existing translation pipeline. The `//` trigger requires whitespace or a paragraph boundary before it, so URLs like `https://example.com/foo` don't accidentally trigger.
+  - **Zendesk placeholders pass through verbatim.** Macros containing `{{ticket.requester.first_name}}`, `{{ticket.requester.organization.name}}`, etc. are inserted as literal text — Zendesk substitutes when the agent sends. The HTML→markdown→translate→HTML roundtrip preserves them since they look like the URL/image protection tokens we already use (translators don't touch `{{...}}`).
+  - **Nested macros not supported.** A macro body containing `//other-macro` is inserted as the literal text, not recursively expanded. Keeps the mental model simple.
+  - **Storage:** `chrome.storage.local.macros = { "<name>": { body: "<html>", attachments: [], updated: <timestamp> } }`. The `attachments` field is reserved for Phase 4 #15 (PDF attachments per macro) — empty for now.
+
+### v1.0.51
 - **PDF modal sized to the centered 2/3 of the viewport.** Field feedback on v1.0.50: "the X is too far." On a full-screen modal, the close button pinned to the viewport corner was a long mouse trip from where the agent's cursor sat (over the PDF content). Modal now uses an inner `.zt-pdf-window` wrapper that takes 2/3 of viewport width (capped to 1100 px on ultrawide displays, min 480 px so it doesn't get unusable on small windows). The dimmed backdrop still covers the full viewport so click-outside-to-dismiss works on either side. Close button anchors to the window's right edge (sitting in the dimmed strip just outside the iframe), so it's always within easy mouse reach. Below 800 px viewport width, the window stretches to nearly full width and the close button moves inside its top-right corner so it can't fall off-screen.
 - **Silenced PDF.js's `webviewerloaded: [object DOMException]` console error.** Benign noise: PDF.js dispatches a `webviewerloaded` event on `parent.document` so embedders can hook init; cross-origin between our `chrome-extension://` iframe and the `*.zendesk.com` parent blocks the dispatch and PDF.js logs the catch. One-line patch in `lib/pdfjs/web/viewer.mjs` replaces the `console.error` call with an explanatory comment. If we ever update PDF.js, the patch needs to be re-applied — there's a comment marker in the file to make it greppable.
 - **Quieted `[zt-pdf]` diagnostic logs.** Moved under the existing `ztDebug` flag now that the feature works end-to-end. Real errors (`console.error('[zt-pdf]…')`) stay unconditional.

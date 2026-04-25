@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manage Macros — Zendesk Auto Translator</title>
+    <link rel="stylesheet" href="macros.css">
+</head>
+<body>
+    <header class="zt-macros-header">
+        <h1>Manage Macros</h1>
+        <p class="zt-macros-subtitle">
+            Trigger from the Zendesk reply composer with <code>//</code> + the start of a macro name.
+            Zendesk placeholders like <code>&#123;&#123;ticket.requester.first_name&#125;&#125;</code>
+            pass through verbatim — Zendesk resolves them when you send.
+        </p>
+    </header>
+
+    <main class="zt-macros-main">
+        <aside class="zt-macros-sidebar">
+            <div class="zt-macros-sidebar-header">
+                <h2>Macros</h2>
+                <button id="newMacroBtn" type="button" class="zt-btn-primary" title="Create a new macro">+ New</button>
+            </div>
+            <input type="search" id="macroFilter" placeholder="Filter…" autocomplete="off" spellcheck="false">
+            <ul id="macroList" class="zt-macros-list" role="listbox" aria-label="Saved macros"></ul>
+            <div id="macroListEmpty" class="zt-macros-empty">
+                No macros yet. Click <strong>+ New</strong> to create one.
+            </div>
+        </aside>
+
+        <section class="zt-macros-editor">
+            <div id="editorPlaceholder" class="zt-macros-placeholder">
+                <p>Select a macro on the left, or click <strong>+ New</strong> to create one.</p>
+            </div>
+
+            <div id="editorPanel" class="zt-macros-panel" hidden>
+                <div class="zt-macros-field">
+                    <label for="macroName">Name</label>
+                    <input type="text" id="macroName" autocomplete="off" spellcheck="false"
+                        placeholder="e.g. shipping-info" maxlength="64">
+                    <div class="zt-macros-hint">Letters, numbers, hyphens, and underscores only. Lowercase recommended.</div>
+                </div>
+
+                <div class="zt-macros-field">
+                    <label for="macroBody">Body</label>
+                    <div class="zt-macros-toolbar" role="toolbar" aria-label="Formatting">
+                        <button type="button" data-cmd="bold" title="Bold (⌘B / Ctrl+B)" aria-label="Bold"><strong>B</strong></button>
+                        <button type="button" data-cmd="italic" title="Italic (⌘I / Ctrl+I)" aria-label="Italic"><em>I</em></button>
+                        <button type="button" data-cmd="underline" title="Underline (⌘U / Ctrl+U)" aria-label="Underline"><u>U</u></button>
+                        <span class="zt-macros-toolbar-sep" aria-hidden="true"></span>
+                        <button type="button" data-cmd="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list">• List</button>
+                        <span class="zt-macros-toolbar-sep" aria-hidden="true"></span>
+                        <button type="button" data-cmd="createLink" title="Insert link" aria-label="Insert link">🔗 Link</button>
+                        <button type="button" data-cmd="unlink" title="Remove link" aria-label="Remove link">Unlink</button>
+                        <span class="zt-macros-toolbar-sep" aria-hidden="true"></span>
+                        <button type="button" data-cmd="removeFormat" title="Clear formatting" aria-label="Clear formatting">Clear</button>
+                    </div>
+                    <div id="macroBody" class="zt-macros-rte" contenteditable="true" spellcheck="true"
+                        aria-label="Macro body" data-placeholder="Type the macro body. Formatting and Zendesk placeholders are preserved when inserted."></div>
+                </div>
+
+                <div class="zt-macros-actions">
+                    <button id="saveMacroBtn" type="button" class="zt-btn-primary">Save</button>
+                    <button id="deleteMacroBtn" type="button" class="zt-btn-danger">Delete</button>
+                    <span id="saveStatus" class="zt-macros-save-status" role="status" aria-live="polite"></span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="macros.js"></script>
+</body>
+</html>

@@ -264,13 +264,31 @@
             opacity: 0.6;
             cursor: not-allowed;
         }
+
+        .manage-macros-btn {
+            width: 100%;
+            margin-top: 16px;
+            background: white;
+            color: #2f3941;
+            border: 1px solid #d8dcde;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .manage-macros-btn:hover {
+            background: #eff6ff;
+            border-color: #1f73b7;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <img src="icon48.png" alt="Icon">
         <h1>Zendesk Auto Translator</h1>
-        <span class="version">v1.0.51</span>
+        <span class="version">v1.0.52</span>
     </div>
 
     <div class="status-section">
@@ -315,6 +333,8 @@
 
     <button class="save-btn" id="saveBtn">Save settings</button>
     <div class="save-msg" id="saveMsg"></div>
+
+    <button class="manage-macros-btn" id="manageMacrosBtn" type="button">Manage macros…</button>
 
     <div class="footer">
         Made for Mac Group Global
