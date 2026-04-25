@@ -1636,6 +1636,153 @@
     }
     
     // ============================================
+    // PDF IN-PAGE VIEWER (Phase 3 #12)
+    // ============================================
+    //
+    // Click interception for PDF links inside the conversation log
+    // (customer/agent messages and internal notes). Opens Mozilla
+    // PDF.js's bundled viewer in a fixed-position modal iframe instead
+    // of letting Chrome's default behavior take over (which is usually
+    // a download or a fresh tab). The agent stays inside Zendesk while
+    // reading the attachment.
+    //
+    // Scope: links with a `.pdf` URL inside `.zd-comment` only — the
+    // user's explicit decision (Phase 3 spec). PDF links elsewhere on
+    // the page (e.g. native Zendesk fields, third-party app sidebars
+    // like Refurbed 360) keep their default behavior.
+    //
+    // PDF fetches from *.zdusercontent.com are unblocked by the narrow
+    // host-permission grant added to manifest.json in v1.0.45.
+
+    let pdfModal = null;     // currently-open backdrop element
+    let pdfPrevFocus = null; // restore focus on close
+
+    function looksLikePdfUrl(href) {
+        if (!href || typeof href !== 'string') return false;
+        try {
+            const u = new URL(href, location.origin);
+            // Strip any query string before checking the extension —
+            // signed-URL attachments often have ?token=… after the path.
+            return /\.pdf$/i.test(u.pathname);
+        } catch (_) {
+            // URL constructor rejects malformed hrefs (relative without
+            // a base, etc.). Fall back to a simpler regex.
+            return /\.pdf(\?|#|$)/i.test(href);
+        }
+    }
+
+    function isInsideMessageBody(el) {
+        // .zd-comment is the body container Zendesk uses for both
+        // customer and agent messages, and for internal notes (same
+        // markup, different styling). Scoping the interceptor here
+        // matches the user's explicit Phase 3 spec: PDFs in messages
+        // and internal notes only.
+        return !!(el.closest && el.closest('.zd-comment'));
+    }
+
+    function openPdfModal(pdfUrl) {
+        if (pdfModal) closePdfModal();
+        pdfPrevFocus = document.activeElement;
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'zt-pdf-backdrop';
+        backdrop.setAttribute('role', 'dialog');
+        backdrop.setAttribute('aria-modal', 'true');
+        backdrop.setAttribute('aria-label', 'PDF viewer');
+
+        // Close button. Sits absolutely positioned over the iframe so
+        // it stays clickable even if PDF.js's toolbar overlaps the top
+        // edge.
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'zt-pdf-close';
+        closeBtn.type = 'button';
+        closeBtn.setAttribute('aria-label', 'Close PDF viewer');
+        closeBtn.title = 'Close (Esc)';
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            closePdfModal();
+        });
+
+        const iframe = document.createElement('iframe');
+        iframe.className = 'zt-pdf-frame';
+        // chrome.runtime.getURL returns a chrome-extension:// URL for
+        // resources listed in manifest.web_accessible_resources. PDF.js
+        // reads the `?file=` query and fetches the PDF; our host-
+        // permission grant for *.zdusercontent.com is what lets the
+        // viewer's fetch from inside the iframe succeed.
+        const viewerUrl = chrome.runtime.getURL('lib/pdfjs/web/viewer.html');
+        iframe.src = `${viewerUrl}?file=${encodeURIComponent(pdfUrl)}`;
+        iframe.setAttribute('title', 'PDF viewer');
+
+        // Click on backdrop (not iframe / close button) dismisses.
+        backdrop.addEventListener('mousedown', (ev) => {
+            if (ev.target === backdrop) closePdfModal();
+        });
+
+        backdrop.appendChild(iframe);
+        backdrop.appendChild(closeBtn);
+        document.body.appendChild(backdrop);
+        pdfModal = backdrop;
+
+        // Escape closes. Capture phase so we beat any inner handlers
+        // (PDF.js binds its own keyboard shortcuts).
+        document.addEventListener('keydown', onPdfKeydown, true);
+
+        // Move focus into the modal so screen readers + keyboard users
+        // start there instead of leaving focus on the original link.
+        try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+    }
+
+    function onPdfKeydown(ev) {
+        if (ev.key === 'Escape' && pdfModal) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            closePdfModal();
+        }
+    }
+
+    function closePdfModal() {
+        if (!pdfModal) return;
+        document.removeEventListener('keydown', onPdfKeydown, true);
+        pdfModal.remove();
+        pdfModal = null;
+        if (pdfPrevFocus && typeof pdfPrevFocus.focus === 'function') {
+            try { pdfPrevFocus.focus({ preventScroll: true }); } catch (_) {}
+        }
+        pdfPrevFocus = null;
+    }
+
+    function installPdfClickInterceptor() {
+        if (window.__ztPdfInterceptorInstalled) return;
+        window.__ztPdfInterceptorInstalled = true;
+
+        // Capture phase so we beat Zendesk's own click handlers and any
+        // navigation-style listeners on the link itself.
+        document.addEventListener('click', (ev) => {
+            if (!isEnabled) return;
+            // Plain left-click only. Cmd/Ctrl/Shift/middle-click should
+            // keep their native semantics (open in new tab, download to
+            // disk, etc.) so the agent can still bypass the modal when
+            // they want to.
+            if (ev.button !== 0) return;
+            if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+
+            const anchor = ev.target && ev.target.closest
+                ? ev.target.closest('a[href]')
+                : null;
+            if (!anchor) return;
+            if (!looksLikePdfUrl(anchor.href)) return;
+            if (!isInsideMessageBody(anchor)) return;
+
+            ev.preventDefault();
+            ev.stopPropagation();
+            openPdfModal(anchor.href);
+        }, true);
+    }
+
+    // ============================================
     // INITIALIZATION
     // ============================================
 
@@ -1703,6 +1850,9 @@
         // It self-gates on isEnabled, so leaving it attached across
         // toggle cycles is safe and cheaper than churning attach/detach.
         installAutoRetranslateListener();
+        // Same pattern for the PDF link interceptor — single document-
+        // level listener, self-gates on isEnabled.
+        installPdfClickInterceptor();
 
         mainObserver = new MutationObserver(scanAndAttach);
         mainObserver.observe(document.body, {
@@ -1741,6 +1891,7 @@
         window.ztReplyButton = null;
         clearAutoRetranslateState();
         closeLanguageMenu();
+        closePdfModal();
     }
 
 })();

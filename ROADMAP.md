@@ -277,9 +277,11 @@ Shipped in v1.0.44. Pure helpers (`htmlToMarkdownish`, `markdownishToHtml`, `pro
 
 ---
 
-## Phase 3 — Foundations (target: week 4)
+## Phase 3 — Foundations ✅ (target: week 4)
 
-### 12. ⬜ PDF in-page viewer (from #11)
+### 12. ✅ PDF in-page viewer (from #11)
+
+Shipped in v1.0.45. Mozilla PDF.js v5.6.205 prebuilt dist bundled at `lib/pdfjs/` (~11 MB after stripping source maps, sample PDF, and the debugger module). Click interceptor on `document` (capture phase) catches `<a>`-with-`.pdf`-href clicks **only when the link is inside `.zd-comment`** — covers customer messages, agent messages, and internal notes; leaves PDF links elsewhere on the page (Refurbed 360 sidebar, native Zendesk fields) with their default behavior. Modifier-key clicks (Cmd/Ctrl/Shift/Alt/middle-click) and right-click context menus pass through untouched so the agent can still open in new tab or save directly. PDF.js's bundled viewer iframe gives text selection, page navigation, zoom, search, **download**, print, and presentation mode for free. Modal closes on Escape, click-outside, or the close button. Host permissions narrowed: `https://*.zdusercontent.com/*` added explicitly (rather than relying on the `optional_host_permissions: ["https://*/*"]` grant) so the install prompt is precise about why the extension needs that origin.
 
 **Effort:** ~5 hours
 
@@ -290,9 +292,9 @@ Shipped in v1.0.44. Pure helpers (`htmlToMarkdownish`, `markdownishToHtml`, `pro
 - "Download" button in the modal saves the PDF to disk (the original Chrome default behavior).
 - Escape key or click-outside closes the modal.
 
-**Open questions:**
-- Zendesk's attachment URLs are on `*.zdusercontent.com`. `host_permissions` already covers `https://*/*` via `optional_host_permissions` from the LibreTranslate feature, but we'll want to request the specific host at first-use to keep the permission prompt tight.
-- Scope of interception: all PDF links, or only attachments within messages (not e.g. PDFs linked in internal notes)? Answer during implementation.
+**Resolved at implementation:**
+- Host permissions: added `https://*.zdusercontent.com/*` to `host_permissions` (narrow grant), not via the broader `optional_host_permissions: ["https://*/*"]` fallback.
+- Scope: PDF links inside `.zd-comment` only — customer/agent messages and internal notes. PDF links elsewhere keep native browser behavior.
 
 ---
 

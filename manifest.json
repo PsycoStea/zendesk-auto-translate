@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "1.0.44",
+  "version": "1.0.45",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
@@ -9,7 +9,8 @@
   ],
   "host_permissions": [
     "https://*.zendesk.com/*",
-    "https://translate.googleapis.com/*"
+    "https://translate.googleapis.com/*",
+    "https://*.zdusercontent.com/*"
   ],
   "optional_host_permissions": [
     "https://*/*",
@@ -47,5 +48,24 @@
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "lib/pdfjs/web/viewer.html",
+        "lib/pdfjs/web/viewer.css",
+        "lib/pdfjs/web/viewer.mjs",
+        "lib/pdfjs/web/images/*",
+        "lib/pdfjs/web/locale/*",
+        "lib/pdfjs/web/cmaps/*",
+        "lib/pdfjs/web/standard_fonts/*",
+        "lib/pdfjs/web/wasm/*",
+        "lib/pdfjs/web/iccs/*",
+        "lib/pdfjs/build/pdf.mjs",
+        "lib/pdfjs/build/pdf.worker.mjs",
+        "lib/pdfjs/build/pdf.sandbox.mjs"
+      ],
+      "matches": ["https://*.zendesk.com/*"]
+    }
+  ]
 }

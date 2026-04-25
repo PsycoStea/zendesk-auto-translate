@@ -39,12 +39,20 @@ See `INSTALLATION_GUIDE.md` for the end-user walkthrough, including how to confi
 ```
 manifest.json          Extension config (Manifest V3)
 content.js             Runs on *.zendesk.com — UI, provider dispatch, reply-paste strategies
-background.js          Service worker — installs defaults
-popup.html / popup.js  Toolbar popup: toggle, provider selector, LibreTranslate URL/key
-styles.css             UI styling, including toast
+src/translate-core.js  Pure helpers (HTML↔markdown, URL/img tokens, blockquote split). Exposed
+                       as window.__ztCore in the browser; require()-able under Node for tests
+background.js          Service worker — installs defaults, dispatches keyboard shortcut
+popup.html / popup.js  Toolbar popup: toggle, fallback config, cache stats, Clear cache
+styles.css             UI styling — badges, toasts, language dropdown, PDF modal
+lib/pdfjs/             Bundled Mozilla PDF.js (v5.6.205) — used by the in-page PDF viewer
 icon*.png              Extension icons
+package.json           Test harness only (jsdom devDep, node:test runner) — extension itself
+                       has no Node runtime dependency
+tests/                 node:test cases for the translate-core helpers
+.github/workflows/     CI: runs `npm test` on every push and PR to main
 INSTALLATION_GUIDE.md  End-user setup + LibreTranslate configuration
 QA_CHECKLIST.md        Pre-release smoke test
+ROADMAP.md             v2 work plan + post-mortems
 README.md              This file
 ```
 
@@ -81,7 +89,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.44 (current)
+### v1.0.45 (current)
+- **PDF in-page viewer (Phase 3 #12 — closes Phase 3).** Click any link to a PDF inside a customer message, agent message, or internal note (anywhere in `.zd-comment`) and the PDF now opens in a fullscreen modal overlay backed by Mozilla's PDF.js viewer — no more leaving the ticket to read an attachment in a new tab. PDF.js's bundled toolbar gives text selection, page navigation, zoom, find-in-document, **download**, print, and presentation mode for free. Modal closes on Escape, click on the dimmed backdrop, or the × close button. PDF.js v5.6.205 prebuilt dist bundled at `lib/pdfjs/` (~11 MB after stripping source maps, sample PDF, and debugger module). The interceptor scopes strictly to `.zd-comment` — PDF links anywhere else (Refurbed 360 sidebar, native Zendesk fields, the requester profile, etc.) keep their default Chrome behavior. Modifier-key clicks (Cmd/Ctrl/Shift/Alt/middle-click) and right-click context menus also pass through untouched, so the agent can still open in new tab or save directly when they want to bypass the modal. Host permissions narrowed: added `https://*.zdusercontent.com/*` to `host_permissions` (rather than relying on the optional broad grant) so the install prompt is precise about why the extension needs that origin.
+
+### v1.0.44
 - **Automated tests for the markdown roundtrip (Phase 2 #11) — closes Phase 2.** Pure helpers (`htmlToMarkdownish`, `markdownishToHtml`, `protectUrls`, `restoreUrls`, `splitCommentAtFirstBlockquote`, `extractEnglishSourceFromMarkdown`, `stripMarkdownSyntax`, `escapeHtml`, `serializeNodeAsMarkdown`, `makeUrlToken`) extracted from `content.js` into a new `src/translate-core.js` with a UMD wrapper that exposes them as `window.__ztCore` in the browser and `module.exports` under Node. The manifest's `content_scripts.js` array loads `src/translate-core.js` first, then `content.js`, which destructures the helpers at the top of its IIFE — call sites stay unchanged. 44 test cases across 5 files in `tests/` cover the full HTML↔markdown roundtrip including adjacent-`<p>` lines, `<p><br></p>` sentinel, `<hr>` separator, bold/italic/underline/list fidelity, URL token protection (incl. Wikipedia-style nested parens, trailing punctuation, multi-URL ordering), `<img>` outerHTML preservation, blockquote-split (incl. nested blockquotes + post-quote signatures + ancestor-div preservation), and `extractEnglishSourceFromMarkdown` edge cases (multiple separators, trailing `---`, isolated dashes). GitHub Actions runs `npm test` on every push and PR to `main` and blocks merges when red. Locally: `npm install && npm test`. The contentMatches false-negative we hit in v1.0.42 and the override-clobber we hit in v1.0.39 are both the kind of regression these tests would have caught at PR time.
 
 ### v1.0.43
