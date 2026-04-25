@@ -209,15 +209,15 @@
 }
 
 /*
- * PDF in-page viewer modal (Phase 3 #12, v1.0.45).
+ * PDF in-page viewer modal (Phase 3 #12).
  *
- * Backdrop covers the full viewport; iframe is centered with a small
- * margin so the agent can click the backdrop to dismiss. Close button
- * sits flush top-right above the iframe (z-indexed above) so it never
- * gets occluded by PDF.js's own toolbar. Iframe loads
- * lib/pdfjs/web/viewer.html?file=<URL> from chrome-extension://, so
- * the host-permission grant for *.zdusercontent.com is what lets it
- * actually fetch the PDF bytes.
+ * Layout (v1.0.51): full-viewport dimmed backdrop for click-outside
+ * dismissal; an inner `.zt-pdf-window` takes the centered 2/3 of the
+ * viewport (capped to 1100px for ultrawides) so the close button is
+ * always within mouse reach; the close button anchors to the
+ * window's right edge, sitting just outside it in the dimmed area;
+ * the iframe fills the window. PDF.js's bundled toolbar gives all
+ * the in-PDF controls (zoom, page nav, search, download, print).
  */
 .zt-pdf-backdrop {
     position: fixed;
@@ -229,8 +229,8 @@
     z-index: 100000;
     display: flex;
     align-items: stretch;
-    justify-content: stretch;
-    padding: 24px;
+    justify-content: center;
+    padding: 24px 0;
     box-sizing: border-box;
     animation: zt-pdf-fade-in 0.15s ease-out;
 }
@@ -240,27 +240,41 @@
     to   { opacity: 1; }
 }
 
+.zt-pdf-window {
+    position: relative;
+    width: 66.67vw;
+    max-width: 1100px;
+    min-width: 480px;
+    height: 100%;
+}
+
 .zt-pdf-frame {
-    flex: 1;
     width: 100%;
     height: 100%;
     border: none;
     border-radius: 6px;
     background: #fff;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    display: block;
 }
 
+/*
+ * Close button anchors to the window's right edge, slightly outside,
+ * sitting in the dimmed area. Stays within easy reach of the agent's
+ * mouse (which is typically over the PDF content), unlike v1.0.45's
+ * version that pinned to the viewport corner.
+ */
 .zt-pdf-close {
     position: absolute;
-    top: 32px;
-    right: 32px;
+    top: 0;
+    right: -52px;
     width: 36px;
     height: 36px;
     border-radius: 50%;
     border: none;
     background: rgba(0, 0, 0, 0.55);
     color: #fff;
-    font-size: 20px;
+    font-size: 22px;
     line-height: 1;
     font-weight: 600;
     cursor: pointer;
@@ -272,7 +286,7 @@
 }
 
 .zt-pdf-close:hover {
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.85);
 }
 
 .zt-pdf-close:focus-visible {
@@ -281,10 +295,10 @@
 }
 
 /*
- * Loading / error overlay. Centered on the backdrop. Shown while the
- * content script fetches the PDF and posts it to the iframe; hidden
- * once handoff is complete. PDF.js's own progress bar takes over from
- * there.
+ * Loading / error overlay. Centered inside the window, shown while
+ * PDF.js fetches the document. The bridge calls `open()` immediately
+ * after iframe load, so on success this gets hidden almost instantly;
+ * on failure the same element flips to red and shows the error.
  */
 .zt-pdf-status {
     position: absolute;
@@ -309,4 +323,21 @@
     background: #fee2e2;
     color: #991b1b;
     pointer-events: auto;
+}
+
+/*
+ * Narrow-viewport fallback: on screens too small for the 2/3-width
+ * window (rare for an agent monitor, but covers laptops in coffee-
+ * shop mode), shrink margins and let the close sit inside the
+ * window so it doesn't fall off-screen.
+ */
+@media (max-width: 800px) {
+    .zt-pdf-window {
+        width: calc(100vw - 32px);
+        min-width: 0;
+    }
+    .zt-pdf-close {
+        right: 8px;
+        top: 8px;
+    }
 }

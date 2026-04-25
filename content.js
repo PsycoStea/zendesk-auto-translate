@@ -1716,9 +1716,15 @@
         backdrop.setAttribute('aria-modal', 'true');
         backdrop.setAttribute('aria-label', 'PDF viewer');
 
-        // Close button. Sits absolutely positioned over the iframe so
-        // it stays clickable even if PDF.js's toolbar overlaps the top
-        // edge.
+        // v1.0.51: explicit window wrapper so the iframe sits in the
+        // center 2/3 of the viewport (with a sensible max-width cap on
+        // ultrawides) and the close button can anchor to the iframe's
+        // edge instead of the viewport's. Field feedback was that on a
+        // full-screen modal, "the X is too far" — agent's mouse was
+        // over the PDF, the close button was at the screen corner.
+        const window_ = document.createElement('div');
+        window_.className = 'zt-pdf-window';
+
         const closeBtn = document.createElement('button');
         closeBtn.className = 'zt-pdf-close';
         closeBtn.type = 'button';
@@ -1732,8 +1738,7 @@
         });
 
         // Inline status (loading / error). Hidden once the iframe
-        // takes over rendering. Sits absolutely positioned over the
-        // backdrop so it's visible during the fetch window.
+        // takes over rendering.
         const status = document.createElement('div');
         status.className = 'zt-pdf-status';
         status.textContent = 'Loading PDF…';
@@ -1741,24 +1746,25 @@
         const iframe = document.createElement('iframe');
         iframe.className = 'zt-pdf-frame';
         iframe.setAttribute('title', 'PDF viewer');
-        // Open the viewer with NO ?file= query — the inline bridge
-        // script in viewer.html will receive the binary data via
-        // postMessage and feed it directly to PDF.js. This sidesteps
-        // the credentials/CORS issue that the URL-based load hits on
-        // Zendesk's `/attachments/<token>/` redirector (which requires
-        // the agent's session cookie, not sent from the iframe's
-        // chrome-extension:// origin).
+        // Open the viewer with NO ?file= query — zt-bridge.js inside
+        // the iframe receives the URL via postMessage and tells PDF.js
+        // to open it with `withCredentials: true`. The iframe is at
+        // chrome-extension:// origin, which is an extension page, so
+        // its credentialed fetch uses the user's actual cookie jar for
+        // *.zendesk.com (covered by host_permissions). See
+        // lib/pdfjs/web/zt-bridge.js for the receive-side.
         const viewerUrl = chrome.runtime.getURL('lib/pdfjs/web/viewer.html');
         iframe.src = viewerUrl;
 
-        // Click on backdrop (not iframe / close button) dismisses.
+        // Click on backdrop (not the inner window) dismisses.
         backdrop.addEventListener('mousedown', (ev) => {
             if (ev.target === backdrop) closePdfModal();
         });
 
-        backdrop.appendChild(iframe);
-        backdrop.appendChild(closeBtn);
-        backdrop.appendChild(status);
+        window_.appendChild(iframe);
+        window_.appendChild(closeBtn);
+        window_.appendChild(status);
+        backdrop.appendChild(window_);
         document.body.appendChild(backdrop);
         pdfModal = backdrop;
 
@@ -1794,7 +1800,7 @@
             });
             // Iframe may have closed during the load wait (user hit Escape).
             if (!pdfModal || !iframe.contentWindow) return;
-            console.log('[zt-pdf] posting URL to viewer:', pdfUrl);
+            ztDbg.log('[zt-pdf] posting URL to viewer:', pdfUrl);
             iframe.contentWindow.postMessage(
                 { type: 'zt-pdf-load', url: pdfUrl },
                 '*'
@@ -1862,7 +1868,7 @@
             const isZdAttachment = isZendeskAttachmentUrl(anchor.href);
             const inMessage = isInsideMessageBody(anchor);
 
-            console.log('[zt-pdf] anchor click', {
+            ztDbg.log('[zt-pdf] anchor click', {
                 href: anchor.href,
                 target: anchor.getAttribute('target'),
                 download: anchor.hasAttribute('download'),
@@ -1887,11 +1893,11 @@
             //      check so PDF links elsewhere on the page (sidebar
             //      apps, native fields) keep their default behavior.
             if (!isZdAttachment && !inMessage) {
-                console.log('[zt-pdf] skip: not a Zendesk attachment and not in a message body');
+                ztDbg.log('[zt-pdf] skip: not a Zendesk attachment and not in a message body');
                 return;
             }
 
-            console.log('[zt-pdf] intercepting and opening modal');
+            ztDbg.log('[zt-pdf] intercepting and opening modal');
             ev.preventDefault();
             ev.stopPropagation();
             openPdfModal(anchor.href);
