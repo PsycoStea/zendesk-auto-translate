@@ -34,7 +34,9 @@ Update each item's emoji as work progresses, and the phase headers at the top of
 
 ---
 
-## Phase 1 — Quick wins (target: week 1)
+## Phase 1 — Quick wins ✅ (target: week 1)
+
+All items resolved as of v1.0.34: #1, #2, #3, #5, #6 shipped; #4 (service worker keep-alive) deferred until field symptoms warrant it.
 
 Small, localized changes. Each ships as its own version so the team can pull updates incrementally during this phase. No dependencies between Phase 1 items.
 
@@ -130,7 +132,9 @@ requestAnimationFrame(() => {
 
 ---
 
-### 6. ⬜ Ticket-wide language lock (from #4)
+### 6. ✅ Ticket-wide language lock (from #4)
+
+Shipped in v1.0.34. First confident detection per ticket (anything not 'unknown') is written to `chrome.storage.local.ticketLanguages` keyed by ticket ID. Subsequent messages in the same ticket short-circuit straight to the locked language — zero detection API calls. Per-message `data-zt-lang` kept as a secondary cache for messages in hidden ticket panels (where `getTicketIdFromUrl()` can't safely identify the owning ticket). Future Phase 2 #8 dropdown writes to the same map for manual override.
 
 **Effort:** ~45 min
 

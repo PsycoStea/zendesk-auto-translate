@@ -42,6 +42,29 @@
         return Math.max(0, Math.ceil((googleCooloffUntil - Date.now()) / 1000));
     }
 
+    // Ticket-wide language lock. Once we've detected a customer's language
+    // for a ticket (e.g. ticket 3165645 is in German), we remember it
+    // forever — every new message in that ticket short-circuits straight
+    // to the locked language without re-hitting the detection endpoint.
+    // Saves API calls and prevents flicker when one of the customer's
+    // replies happens to round-trip through detection as a different
+    // language (short messages or numbers-heavy text are unstable).
+    //
+    // Per-message data-zt-lang stays as a secondary cache: it's ephemeral
+    // (lives on a DOM node) but covers the case where Zendesk has multiple
+    // tickets open in the same DOM and we can't tell which ticket a hidden
+    // message belongs to (getTicketIdFromUrl only knows the *visible*
+    // ticket).
+    //
+    // Invalidation: future Phase 2 #8 language-override dropdown writes to
+    // this same map. No automatic expiry.
+    let ticketLanguages = {};
+    function persistTicketLanguages() {
+        // Direct write — these updates are at most once per ticket open
+        // (first message detection) so debouncing buys nothing.
+        safeStorageSet({ ticketLanguages });
+    }
+
     function normalizeUrl(u) {
         return (u || '').trim().replace(/\/+$/, '');
     }
@@ -94,13 +117,14 @@
     }
 
     chrome.storage.local.get(
-        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats', 'ztDebug'],
+        ['enabled', 'translationMemory', 'libretranslateUrl', 'libretranslateApiKey', 'cacheStats', 'ztDebug', 'ticketLanguages'],
         (result) => {
             isEnabled = result.enabled !== false;
             translationMemory = result.translationMemory || {};
             settings.libretranslateUrl = normalizeUrl(result.libretranslateUrl);
             settings.libretranslateApiKey = result.libretranslateApiKey || '';
             ztDebug = !!result.ztDebug;
+            ticketLanguages = (result.ticketLanguages && typeof result.ticketLanguages === 'object') ? result.ticketLanguages : {};
             if (result.cacheStats && typeof result.cacheStats === 'object') {
                 cacheStats.hits = Number(result.cacheStats.hits) || 0;
                 cacheStats.total = Number(result.cacheStats.total) || 0;
@@ -119,6 +143,9 @@
         if (changes.libretranslateUrl) settings.libretranslateUrl = normalizeUrl(changes.libretranslateUrl.newValue);
         if (changes.libretranslateApiKey) settings.libretranslateApiKey = changes.libretranslateApiKey.newValue || '';
         if (changes.ztDebug) ztDebug = !!changes.ztDebug.newValue;
+        if (changes.ticketLanguages && changes.ticketLanguages.newValue) {
+            ticketLanguages = changes.ticketLanguages.newValue;
+        }
         // If another Zendesk tab (or a service worker) updated the cache
         // stats, pick up the newer value. Guard against our own pending
         // write losing counts — only take the incoming value if it's at
@@ -655,13 +682,42 @@
         const sourceMarkdown = htmlToMarkdownish(beforeHtml) || '';
         if (!sourceMarkdown.trim()) return;  // Nothing to translate (e.g. only a forwarded quote).
 
-        // Cache the detected language on the element itself so ticket
-        // switches (which clear data-zt-processed to force UI re-render)
-        // don't burn a fresh API call for every previously-seen message.
+        // Detection precedence:
+        //   1. Per-message data-zt-lang (already detected on this element).
+        //   2. Ticket-wide lock from chrome.storage.local.ticketLanguages —
+        //      but only when this message is in the currently visible
+        //      ticket panel. Zendesk keeps multiple tickets in the same
+        //      DOM and getTicketIdFromUrl() only knows the active one, so
+        //      applying ticket A's lock to a hidden ticket B's message
+        //      would mis-translate.
+        //   3. Provider call. After detection, persist a non-'unknown'
+        //      result to the ticket lock so future messages on this same
+        //      ticket skip detection.
         let langCode = messageElement.dataset.ztLang;
         if (!langCode) {
-            langCode = await detectLanguage(textContent);
-            messageElement.dataset.ztLang = langCode;
+            const ticketId = getTicketIdFromUrl();
+            const visible = isElementVisible(messageElement);
+
+            if (ticketId && visible && ticketLanguages[ticketId]) {
+                langCode = ticketLanguages[ticketId];
+                messageElement.dataset.ztLang = langCode;
+            } else {
+                langCode = await detectLanguage(textContent);
+                messageElement.dataset.ztLang = langCode;
+                // Persist only confident detections from the visible
+                // ticket — 'unknown' means the providers couldn't decide
+                // and is not worth caching.
+                if (
+                    visible
+                    && ticketId
+                    && langCode
+                    && langCode !== 'unknown'
+                    && ticketLanguages[ticketId] !== langCode
+                ) {
+                    ticketLanguages[ticketId] = langCode;
+                    persistTicketLanguages();
+                }
+            }
         }
         if (langCode === 'en') return;
 

@@ -81,7 +81,10 @@ The winning strategy is logged to the page console as `[zt] Reply replaced via s
 
 ## Version history
 
-### v1.0.33 (current)
+### v1.0.34 (current)
+- **Ticket-wide language lock.** Once the extension has detected the customer's language for a ticket — say ticket 3165645 is in German — every subsequent message in that same ticket skips detection entirely and uses the locked value. The lock is persisted forever in `chrome.storage.local.ticketLanguages` keyed by ticket ID, so even reopening the ticket weeks later avoids the redundant detection call. Detection precedence is now: (1) the per-message `data-zt-lang` from earlier scan ticks, (2) the ticket lock when the message is in the currently visible panel, (3) a fresh provider call. Step (2) is gated on `isElementVisible(messageElement)` because Zendesk keeps multiple tickets in the same DOM and `getTicketIdFromUrl()` only knows the active one — applying ticket A's lock to a hidden ticket B's message would mis-translate. Confident detections (anything not `'unknown'`) get written back to the map for the visible ticket; `'unknown'` results are not cached so a transient detection failure doesn't poison the lock. The Phase 2 language-override dropdown will write to this same map for manual overrides.
+
+### v1.0.33
 - **Scroll position preserved across customer-message swaps.** Toggling Show original ↔ Show translation, or the initial auto-translate swap landing while the agent has already scrolled to read further down, no longer yanks the message hundreds of pixels under the cursor when source and translation differ in length. New `preserveScrollAround(anchor, mutate)` helper records the message's viewport top before the swap, runs the mutation, and on the next animation frame adjusts the scroll position of the nearest scrollable ancestor (Zendesk's conversation log lives in a custom scrolling div, not the window) so the anchor sits at the same viewport pixel as before. Falls back to `window.scrollBy` for the rare case nothing in the chain scrolls. Sub-pixel deltas are skipped to avoid feedback loops with React re-renders.
 
 ### v1.0.32
