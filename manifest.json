@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "1.0.48",
+  "version": "1.0.49",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
@@ -55,6 +55,8 @@
         "lib/pdfjs/web/viewer.html",
         "lib/pdfjs/web/viewer.css",
         "lib/pdfjs/web/viewer.mjs",
+        "lib/pdfjs/web/zt-bridge.js",
+        "lib/pdfjs/web/compressed.tracemonkey-pldi-09.pdf",
         "lib/pdfjs/web/images/*",
         "lib/pdfjs/web/locale/*",
         "lib/pdfjs/web/cmaps/*",

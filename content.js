@@ -1770,23 +1770,31 @@
         // start there instead of leaving focus on the original link.
         try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
 
-        // Fetch + post in parallel with the iframe loading. The fetch
-        // happens in the page's context so cookies for *.zendesk.com
-        // travel automatically (same-origin same-domain request).
-        // Once both the bytes and the iframe load are ready, post.
-        let bytesPromise, iframeReady;
+        // Route the fetch through the background service worker (v1.0.49).
+        // In Manifest V3, content-script fetches are treated as cross-
+        // origin from the chrome-extension:// origin and Zendesk's
+        // attachment redirector doesn't send the cookies the agent's
+        // session needs. Background-SW fetches with credentials: 'include'
+        // hit the host_permissions fast path: CORS is bypassed for
+        // permitted hosts and the user's actual cookie jar is used.
+        // See background.js's chrome.runtime.onMessage handler for
+        // the type:'zt-fetch-pdf' branch.
+        const iframeReady = new Promise((resolve) => {
+            iframe.addEventListener('load', resolve, { once: true });
+        });
+
+        let bytes;
         try {
-            console.log('[zt-pdf] fetching', pdfUrl);
-            bytesPromise = fetch(pdfUrl, {
-                credentials: 'include',
-                redirect: 'follow',
-            }).then(async (r) => {
-                console.log('[zt-pdf] fetch response', r.status, r.statusText, r.headers.get('content-type'));
-                if (!r.ok) {
-                    throw new Error(`HTTP ${r.status} ${r.statusText}`);
-                }
-                return r.arrayBuffer();
+            console.log('[zt-pdf] requesting fetch from background', pdfUrl);
+            const res = await chrome.runtime.sendMessage({
+                type: 'zt-fetch-pdf',
+                url: pdfUrl,
             });
+            if (!res || !res.ok) {
+                throw new Error((res && res.error) || 'no response from background');
+            }
+            console.log('[zt-pdf] background returned', res.data && res.data.byteLength, 'bytes', res.contentType);
+            bytes = res.data;
         } catch (err) {
             console.error('[zt-pdf] fetch error:', err);
             status.textContent = `Failed to load PDF: ${err.message || err}`;
@@ -1794,12 +1802,8 @@
             return;
         }
 
-        iframeReady = new Promise((resolve) => {
-            iframe.addEventListener('load', resolve, { once: true });
-        });
-
         try {
-            const [bytes] = await Promise.all([bytesPromise, iframeReady]);
+            await iframeReady;
             // Iframe may have closed during fetch (user hit Escape).
             if (!pdfModal || !iframe.contentWindow) return;
             console.log('[zt-pdf] posting', bytes.byteLength, 'bytes to viewer');
@@ -1814,7 +1818,7 @@
             // its own progress bar from here.
             status.style.display = 'none';
         } catch (err) {
-            console.error('[zt-pdf] load pipeline failed:', err);
+            console.error('[zt-pdf] postMessage failed:', err);
             status.textContent = `Failed to load PDF: ${err.message || err}`;
             status.classList.add('zt-pdf-status-error');
         }

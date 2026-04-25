@@ -35,53 +35,13 @@ See https://github.com/adobe-type-tools/cmap-resources
 
   <script src="viewer.mjs" type="module"></script>
   <!--
-    Zendesk Auto Translator v1.0.48 — postMessage bridge.
+    Zendesk Auto Translator v1.0.49 — postMessage bridge.
     Listens for { type: 'zt-pdf-load', data: ArrayBuffer } from the
-    parent content script and feeds it directly into PDF.js as binary
-    data, bypassing the URL/credentials path. This is needed because
-    Zendesk's `/attachments/<token>/` redirector requires the agent's
-    session cookie, and a fetch from this iframe's chrome-extension://
-    origin doesn't send those cookies. The content script (running in
-    the Zendesk page context) does the fetch, gets the bytes, and
-    hands them here. See content.js openPdfModal.
+    parent content script and feeds it into PDF.js as binary data.
+    Loaded as an external file (not inline) because the extension's
+    default CSP forbids inline scripts.
   -->
-  <script>
-    (function () {
-      window.addEventListener('message', function (ev) {
-        var msg = ev && ev.data;
-        if (!msg || msg.type !== 'zt-pdf-load' || !msg.data) return;
-        var openWith = function () {
-          // PDFViewerApplication is the global the bundled viewer
-          // exposes once viewer.mjs runs. .open() accepts either
-          // { url, ... } or { data: Uint8Array | ArrayBuffer }.
-          try {
-            window.PDFViewerApplication.open({ data: msg.data });
-          } catch (err) {
-            console.error('[zt-pdf viewer] open() failed:', err);
-          }
-        };
-        var app = window.PDFViewerApplication;
-        if (app && app.initialized) {
-          openWith();
-        } else if (app && app.initializedPromise) {
-          app.initializedPromise.then(openWith);
-        } else {
-          // viewer.mjs not yet executed — retry briefly.
-          var tries = 0;
-          var retry = function () {
-            if (window.PDFViewerApplication && window.PDFViewerApplication.initializedPromise) {
-              window.PDFViewerApplication.initializedPromise.then(openWith);
-            } else if (tries++ < 50) {
-              setTimeout(retry, 50);
-            } else {
-              console.error('[zt-pdf viewer] PDFViewerApplication never became ready');
-            }
-          };
-          retry();
-        }
-      }, false);
-    })();
-  </script>
+  <script src="zt-bridge.js"></script>
   </head>
 
   <body tabindex="0">
