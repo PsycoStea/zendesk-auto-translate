@@ -1966,6 +1966,7 @@
             if (r && r.macros && typeof r.macros === 'object') {
                 macros = r.macros;
             }
+            console.log('[zt-macro] loaded from storage:', Object.keys(macros).length, 'macros:', Object.keys(macros));
         });
     }
 
@@ -1996,13 +1997,23 @@
     // partial contains a non-name char, etc).
     function findMacroTriggerAtCaret(composer) {
         const sel = composer.ownerDocument.getSelection();
-        if (!sel || sel.rangeCount === 0) return null;
+        if (!sel || sel.rangeCount === 0) {
+            console.log('[zt-macro] trigger skip: no selection');
+            return null;
+        }
         const range = sel.getRangeAt(0);
-        if (!range.collapsed) return null;  // active selection — no trigger
+        if (!range.collapsed) {
+            console.log('[zt-macro] trigger skip: range not collapsed');
+            return null;
+        }
         const node = range.startContainer;
-        if (node.nodeType !== Node.TEXT_NODE) return null;
+        if (node.nodeType !== Node.TEXT_NODE) {
+            console.log('[zt-macro] trigger skip: caret not in text node, nodeType=', node.nodeType, 'tagName=', node.tagName);
+            return null;
+        }
         const offset = range.startOffset;
         const text = node.data || '';
+        console.log('[zt-macro] trigger inspect: text=', JSON.stringify(text), 'offset=', offset);
 
         // Walk back from the caret. Accept name chars; stop at `/`,
         // whitespace, or other punctuation. The `//` must be immediately
@@ -2012,8 +2023,14 @@
         while (i > 0 && isMacroNameChar(text.charAt(i - 1))) i--;
         // i now points to the start of the partial (or to the offset
         // itself if the caret sits right after `//`).
-        if (i < 2) return null;
-        if (text.charAt(i - 1) !== '/' || text.charAt(i - 2) !== '/') return null;
+        if (i < 2) {
+            console.log('[zt-macro] trigger skip: i<2 after walkback, i=', i);
+            return null;
+        }
+        if (text.charAt(i - 1) !== '/' || text.charAt(i - 2) !== '/') {
+            console.log('[zt-macro] trigger skip: no // before partial. text[i-2..i]=', JSON.stringify(text.slice(i - 2, i)));
+            return null;
+        }
 
         // Make sure `//` isn't part of a URL or other glued sequence —
         // require either start of node, or a whitespace/punctuation
@@ -2021,7 +2038,10 @@
         // `https://foo` or `path//bar` not being treated as triggers.)
         if (i - 2 > 0) {
             const before = text.charAt(i - 3);
-            if (!/[\s(\[{>]/.test(before)) return null;
+            if (!/[\s(\[{>]/.test(before)) {
+                console.log('[zt-macro] trigger skip: glued before //, char=', JSON.stringify(before));
+                return null;
+            }
         }
 
         const partial = text.slice(i, offset);
@@ -2029,6 +2049,7 @@
         const triggerRange = composer.ownerDocument.createRange();
         triggerRange.setStart(node, triggerStart);
         triggerRange.setEnd(node, offset);
+        console.log('[zt-macro] trigger MATCH: partial=', JSON.stringify(partial));
         return { partial, range: triggerRange };
     }
 
@@ -2073,6 +2094,7 @@
         if (!menu) return;
         menu.innerHTML = '';
         const items = macroAutocomplete.items;
+        console.log('[zt-macro] rendering menu with', items.length, 'items:', items);
         if (items.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'zt-macro-menu-empty';
@@ -2116,6 +2138,10 @@
         const menu = macroAutocomplete.menu;
         if (!menu || !triggerRange) return;
         const rect = triggerRange.getBoundingClientRect();
+        console.log('[zt-macro] positioning menu, trigger rect=', {
+            top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right,
+            width: rect.width, height: rect.height,
+        });
         // Anchor below the // by default; flip above if too close to
         // viewport bottom.
         const menuHeight = Math.min(menu.scrollHeight || 240, 240);
@@ -2274,14 +2300,26 @@
             const composer = ev.target && ev.target.closest
                 ? ev.target.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]')
                 : null;
-            if (!composer) { closeMacroMenu(); return; }
-            if (!isElementVisible(composer)) { closeMacroMenu(); return; }
+            if (!composer) {
+                // Most input events come from outside the composer
+                // (other Zendesk fields, the page itself). Don't log
+                // those — would be too noisy.
+                closeMacroMenu();
+                return;
+            }
+            if (!isElementVisible(composer)) {
+                console.log('[zt-macro] input skip: composer not visible');
+                closeMacroMenu();
+                return;
+            }
+            console.log('[zt-macro] input event on composer, type=', ev.type);
 
             const trigger = findMacroTriggerAtCaret(composer);
             if (!trigger) {
                 closeMacroMenu();
                 return;
             }
+            console.log('[zt-macro] opening menu with', Object.keys(macros).length, 'macros loaded; partial=', JSON.stringify(trigger.partial));
             openOrUpdateMacroMenu(composer, trigger);
         };
         document.addEventListener('input', onInput, true);
