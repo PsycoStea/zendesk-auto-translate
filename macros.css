@@ -47,6 +47,143 @@ body {
     border: 1px solid #e1e5e5;
 }
 
+.zt-sync-bar {
+    flex: 0 0 auto;
+    background: #f9fafb;
+    border-bottom: 1px solid #e1e5e5;
+    padding: 12px 32px;
+}
+
+.zt-sync-bar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.zt-sync-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: #2f3941;
+    flex-wrap: wrap;
+}
+
+.zt-sync-info strong { font-weight: 600; }
+
+.zt-sync-repo a {
+    color: #1f73b7;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    text-decoration: none;
+}
+.zt-sync-repo a:hover { text-decoration: underline; }
+
+.zt-sync-last {
+    color: #68737d;
+    font-size: 12px;
+}
+
+.zt-sync-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.zt-btn-secondary {
+    background: #fff;
+    color: #2f3941;
+    border: 1px solid #d8dcde;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.zt-btn-secondary:hover:not(:disabled) {
+    background: #eff6ff;
+    border-color: #1f73b7;
+}
+.zt-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.zt-btn-link {
+    background: transparent;
+    color: #1f73b7;
+    border: none;
+    padding: 6px 8px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.zt-btn-link:hover { text-decoration: underline; }
+
+.zt-sync-settings {
+    margin-top: 12px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #e1e5e5;
+    border-radius: 4px;
+}
+
+.zt-sync-settings label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #68737d;
+    margin-bottom: 6px;
+}
+
+.zt-sync-settings input[type="password"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #d8dcde;
+    border-radius: 4px;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    background: #fff;
+}
+.zt-sync-settings input[type="password"]:focus {
+    outline: none;
+    border-color: #1f73b7;
+}
+
+.zt-sync-hint {
+    margin: 8px 0 12px;
+    font-size: 12px;
+    color: #68737d;
+    line-height: 1.4;
+}
+.zt-sync-hint a { color: #1f73b7; }
+.zt-sync-hint code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    background: #f5f7f9;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid #e1e5e5;
+}
+
+.zt-sync-settings-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.zt-sync-status {
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 16px;
+    color: #68737d;
+}
+.zt-sync-status-success { color: #038153; }
+.zt-sync-status-error { color: #cc3340; }
+.zt-sync-status-busy { color: #1f73b7; }
+
 .zt-macros-main {
     flex: 1 1 auto;
     display: flex;
@@ -257,6 +394,86 @@ body {
 .zt-macros-rte p { margin: 0 0 0.6em; }
 .zt-macros-rte ul, .zt-macros-rte ol { margin: 0 0 0.6em 1.5em; }
 .zt-macros-rte a { color: #1f73b7; }
+
+/* ---------------- Attachments ---------------- */
+
+.zt-attachments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.zt-attachments-list:empty + .zt-attachments-controls .zt-macros-hint::before {
+    content: 'No PDFs attached. ';
+}
+
+.zt-attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    background: #f9fafb;
+    border: 1px solid #e1e5e5;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.zt-attachment-icon {
+    flex: 0 0 auto;
+    color: #cc3340;
+    font-weight: 600;
+    font-size: 11px;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: 3px;
+    padding: 2px 5px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.zt-attachment-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #2f3941;
+}
+
+.zt-attachment-size {
+    flex: 0 0 auto;
+    color: #68737d;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.zt-attachment-remove {
+    flex: 0 0 auto;
+    background: transparent;
+    color: #68737d;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+}
+.zt-attachment-remove:hover {
+    background: #fef2f2;
+    color: #cc3340;
+    border-color: #fca5a5;
+}
+
+.zt-attachments-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.zt-attachments-controls .zt-macros-hint {
+    margin: 0;
+    flex: 1 1 auto;
+}
 
 /* ---------------- Action bar ---------------- */
 

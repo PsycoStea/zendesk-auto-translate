@@ -1,16 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "1.0.53",
+  "version": "2.0.0",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "activeTab"
   ],
   "host_permissions": [
     "https://*.zendesk.com/*",
     "https://translate.googleapis.com/*",
-    "https://*.zdusercontent.com/*"
+    "https://*.zdusercontent.com/*",
+    "https://api.github.com/*"
   ],
   "optional_host_permissions": [
     "https://*/*",

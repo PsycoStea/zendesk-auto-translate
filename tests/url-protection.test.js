@@ -92,3 +92,41 @@ test('text with no URLs is unchanged', () => {
     assert.deepEqual(urls, []);
     assert.equal(restoreUrls(text, urls), input);
 });
+
+test('markdown link where text equals URL round-trips cleanly', () => {
+    // Regression: when an agent pastes a bare URL into the Zendesk
+    // composer, Zendesk wraps it as `<a href="URL">URL</a>` — the link
+    // text and href are identical. Serialized as
+    // `[https://example.com](https://example.com)`, then the markdown-
+    // link regex tokenizes the URL portion to
+    // `[https://example.com]({{ztlink0}})`. Earlier the bare-URL regex
+    // would then over-capture into the brackets/token, mangling
+    // urls[1] to `https://example.com]({{ztlink0}}` and emitting
+    // `[{{ztlink1}})` — totally broken on restore. The fix excludes
+    // `]`, `)`, `}` from the bare-URL char class so it stops at the
+    // markdown-link boundary.
+    const input = '[https://example.com](https://example.com)';
+    const { text, urls } = protectUrls(input);
+    // Both URLs get tokenized: index 0 from the markdown link,
+    // index 1 from the bare URL inside the brackets.
+    assert.equal(text, '[{{ztlink1}}]({{ztlink0}})');
+    assert.deepEqual(urls, ['https://example.com', 'https://example.com']);
+    assert.equal(restoreUrls(text, urls), input);
+});
+
+test('bare URL stops at closing bracket of a markdown link', () => {
+    // After the markdown-link regex tokenizes a link, the string holds
+    // `[text]({{ztlinkN}})`. The bare-URL regex must not bleed past the
+    // `]` into the token. Input: a markdown link whose text contains a
+    // bare URL. After the markdown-link regex, urls = [link's href];
+    // after the bare-URL regex, urls = [link's href, bracket text URL].
+    const input = '[Click https://example.com here](https://example.org)';
+    const { text, urls } = protectUrls(input);
+    // The markdown-link regex tokenizes the href as urls[0] = example.org;
+    // then the bare-URL regex tokenizes the URL inside the brackets as
+    // urls[1] = example.com. Without the `]` exclusion, the bare-URL
+    // regex would eat the `]({{ztlink0}})` suffix into urls[1].
+    assert.equal(text, '[Click {{ztlink1}} here]({{ztlink0}})');
+    assert.deepEqual(urls, ['https://example.org', 'https://example.com']);
+    assert.equal(restoreUrls(text, urls), input);
+});

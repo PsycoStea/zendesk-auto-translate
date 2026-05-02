@@ -15,6 +15,40 @@
         </p>
     </header>
 
+    <section class="zt-sync-bar">
+        <div class="zt-sync-bar-row">
+            <div class="zt-sync-info">
+                <strong>GitHub sync</strong>
+                <span class="zt-sync-repo">
+                    <a href="https://github.com/PsycoStea/zendesk-auto-translate-macros" target="_blank" rel="noopener">PsycoStea/zendesk-auto-translate-macros</a>
+                </span>
+                <span id="syncLastInfo" class="zt-sync-last">Not synced yet.</span>
+            </div>
+            <div class="zt-sync-actions">
+                <button id="syncPullBtn" type="button" class="zt-btn-secondary" title="Download remote macros and merge into local storage (last-write-wins by timestamp)">⬇ Pull</button>
+                <button id="syncPushBtn" type="button" class="zt-btn-secondary" title="Upload local macros to GitHub (only files that changed)">⬆ Push</button>
+                <button id="syncSettingsBtn" type="button" class="zt-btn-link" title="Configure GitHub access token">Settings ▾</button>
+            </div>
+        </div>
+        <div id="syncSettingsPanel" class="zt-sync-settings" hidden>
+            <label for="syncToken">GitHub personal access token</label>
+            <input type="password" id="syncToken" autocomplete="off" spellcheck="false"
+                placeholder="ghp_… or github_pat_…">
+            <p class="zt-sync-hint">
+                <strong>Pulling needs no token</strong> — anyone can click "Pull" to grab the latest macros.
+                A token is only needed to <strong>publish updates</strong> back to GitHub, typically only by the
+                team lead. Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>
+                with <code>Contents: Read and write</code> on
+                <code>PsycoStea/zendesk-auto-translate-macros</code>. The token is stored only in this browser.
+            </p>
+            <div class="zt-sync-settings-actions">
+                <button id="syncSaveTokenBtn" type="button" class="zt-btn-primary">Save token</button>
+                <button id="syncClearTokenBtn" type="button" class="zt-btn-danger">Forget token</button>
+            </div>
+        </div>
+        <div id="syncStatus" class="zt-sync-status" role="status" aria-live="polite"></div>
+    </section>
+
     <main class="zt-macros-main">
         <aside class="zt-macros-sidebar">
             <div class="zt-macros-sidebar-header">
@@ -57,6 +91,19 @@
                     </div>
                     <div id="macroBody" class="zt-macros-rte" contenteditable="true" spellcheck="true"
                         aria-label="Macro body" data-placeholder="Type the macro body. Formatting and Zendesk placeholders are preserved when inserted."></div>
+                </div>
+
+                <div class="zt-macros-field">
+                    <label>PDF attachments</label>
+                    <div id="attachmentsList" class="zt-attachments-list" role="list"></div>
+                    <div class="zt-attachments-controls">
+                        <input type="file" id="attachmentInput" accept="application/pdf,.pdf"
+                            multiple style="display: none;">
+                        <button id="addAttachmentBtn" type="button" class="zt-btn-secondary">+ Add PDF</button>
+                        <span class="zt-macros-hint">
+                            PDFs are attached to the reply when the macro is inserted. Max 10MB per file.
+                        </span>
+                    </div>
                 </div>
 
                 <div class="zt-macros-actions">

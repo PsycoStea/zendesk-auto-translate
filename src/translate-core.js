@@ -73,13 +73,20 @@
             }
         );
 
-        // Bare http(s) URLs. Trailing punctuation (period, comma, close
-        // paren, etc.) is split off so "See https://example.com." doesn't
-        // capture the period as part of the URL.
+        // Bare http(s) URLs. The character class excludes `]`, `)`, `}`
+        // so the regex stops at the boundary of a markdown link bracket
+        // or a `{{ztlinkN}}` token — without that, on input like
+        // `[https://example.com]({{ztlink0}})` (produced by the markdown
+        // link replacement above when the link text equals its href),
+        // the bare-URL regex would over-capture into the brackets and
+        // tokens, corrupting both the visible text and the URL on
+        // restore. Trailing punctuation (period, comma, etc.) is still
+        // split off so "See https://example.com." doesn't include the
+        // period in the captured URL.
         out = out.replace(
-            /https?:\/\/[^\s<>"'`]+/g,
+            /https?:\/\/[^\s<>"'`\])}]+/g,
             (url) => {
-                const trailMatch = url.match(/[.,;:!?"'\])]+$/);
+                const trailMatch = url.match(/[.,;:!?"']+$/);
                 const trailing = trailMatch ? trailMatch[0] : '';
                 const cleanUrl = trailing ? url.slice(0, -trailing.length) : url;
                 urls.push(cleanUrl);

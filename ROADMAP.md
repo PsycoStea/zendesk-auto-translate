@@ -327,7 +327,7 @@ Resolved open questions:
 
 ---
 
-### 14. ⬜ Macros GitHub sync (from #10, v2)
+### 14. ✅ Macros GitHub sync (from #10, v2) — shipped v1.0.61
 
 **Effort:** ~5 hours
 
@@ -345,9 +345,16 @@ Resolved open questions:
 - What happens when an agent edits a macro and the PAT is invalid/expired? Toast + surface in popup.
 - Deletion: deleting a macro locally pushes a file delete. Confirm with a prompt since it's destructive to other agents.
 
+**As-built deviations from plan:**
+- **Repo is public, not private.** Decision: macros only contain customer-facing language (greetings, signatures, return-policy text) that's already going out via email. Public lets pull be anonymous (no token, no GitHub account) for everyone — only the team lead needs a PAT to push.
+- **Pull is anonymous, push is admin-only.** The split-read/write architecture removes all friction for teammates; they click Pull and it works with zero setup. Only the admin curates and publishes.
+- **No automatic sync toggle.** Push and Pull are explicit buttons only. Auto-sync was deferred to avoid surprise overwrites of unpublished local edits.
+- **Repo hardcoded to `PsycoStea/zendesk-auto-translate-macros`** rather than configurable, per user request — keeps the UI simpler.
+- **Pull uses content-equivalence, not timestamps** (changed in v1.0.66). Comparing local body+attachments metadata against remote skips identical macros and overwrites differing ones, so a local "delete a PDF and click Pull" intuitively restores it instead of being suppressed by last-write-wins.
+
 ---
 
-### 15. ⬜ PDF attachments as part of macros (from #13)
+### 15. ✅ PDF attachments as part of macros (from #13) — shipped v1.0.62 → v1.0.66
 
 **Effort:** ~5 hours (after macros + PDF viewer working)
 
@@ -361,6 +368,12 @@ Resolved open questions:
 **Open questions:**
 - Zendesk's attachment upload has its own API. Is there a cleaner route via the Apps Framework? Probably not available from a regular content-script extension — stick with synthesized drop.
 - Max PDF size? Zendesk has a 50MB attachment limit; extension's IndexedDB easily handles that.
+
+**As-built deviations from plan:**
+- **Storage is `chrome.storage.local` with `unlimitedStorage`, not IndexedDB.** Blobs are kept as base64 in `chrome.storage.local.macroAttachments` keyed by id. Reason: content scripts can read `chrome.storage.local` directly, so the macro-insertion path doesn't need a service-worker round-trip to fetch blobs. Base64's 33% inflation is acceptable; PDFs in macros are typically a few hundred KB.
+- **Insertion uses the file-input upload path, not synthesized drop.** First attempt (v1.0.63) dispatched a synthetic `drop` on the composer area, which triggered Zendesk's "Drop to Attach" overlay because the `dragenter` showed it but our `drop` didn't fire on the overlay's actual drop zone — leaving the overlay stuck. v1.0.64 switched to finding Zendesk's hidden `<input type="file" data-test-id="omnicomposer-external-file-uploader">`, setting `input.files = dataTransfer.files`, and dispatching `change`. This is exactly what a real "Attach" button click produces, so React/Lotus state updates correctly. Document-level `drop` on `document.body` (without `dragenter`/`dragover`) remains as a fallback for layouts where the file input isn't present.
+- **Repo layout: per-macro folder with original filenames.** `macros/<name>/<filename>.pdf` rather than the originally-planned single `/pdfs/` folder. Per-macro folders make the GitHub UI more navigable and avoid collisions when two different macros happen to ship a `return-form.pdf`.
+- **Hard cap 10MB / soft warn 2MB.** PDFs under 2MB add silently; 2-10MB prompts confirm; over 10MB rejected. Per-PDF, not per-macro.
 
 ---
 
@@ -387,7 +400,7 @@ These were considered and deliberately deferred to keep v2 scope finite.
 
 Before sharing with the team:
 
-- [ ] All 15 items above ✅
+- [x] All 15 items above ✅
 - [ ] QA checklist passes (extend existing `QA_CHECKLIST.md` with sections for each new feature)
 - [ ] CHANGELOG.md generated from version history
 - [ ] SETUP.md written for teammates (short, 6 steps)

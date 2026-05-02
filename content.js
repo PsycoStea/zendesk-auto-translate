@@ -460,7 +460,7 @@
     // previously-cached results look wrong (e.g. paragraph-splitting, HTML
     // formatting preservation). Old entries with a different prefix become
     // unreachable and naturally evicted by the LRU trim.
-    const CACHE_VERSION = 'v5';
+    const CACHE_VERSION = 'v6';
 
     // Translators sometimes mangle markdown-style links ([text](url)) —
     // moving the brackets around, dropping the URL, or translating words
@@ -522,7 +522,17 @@
         // Unified cache key (no provider prefix) — a translation is a
         // translation regardless of who produced it, and unifying keeps
         // the hit rate higher.
-        const memoryKey = `${CACHE_VERSION}:${text.slice(0, 100)}_${targetLang}`;
+        //
+        // The key uses the FULL source text, not a truncated prefix.
+        // v1.0.30–v1.0.67 sliced to the first 100 chars, which caused
+        // catastrophic collisions: any two messages sharing a 100-char
+        // prefix returned the same translation, so a "courier delay"
+        // boilerplate cached against one variant served the same
+        // German output to every later variant — even when the rest
+        // of the message changed completely. Cache version bumped to
+        // v6 so the polluted v5 entries are unreachable and evict
+        // naturally.
+        const memoryKey = `${CACHE_VERSION}:${text}_${targetLang}`;
         cacheStats.total++;
         if (translationMemory[memoryKey]) {
             cacheStats.hits++;
@@ -1998,22 +2008,22 @@
     function findMacroTriggerAtCaret(composer) {
         const sel = composer.ownerDocument.getSelection();
         if (!sel || sel.rangeCount === 0) {
-            console.log('[zt-macro] trigger skip: no selection');
+            ztDbg.log('[zt-macro] trigger skip: no selection');
             return null;
         }
         const range = sel.getRangeAt(0);
         if (!range.collapsed) {
-            console.log('[zt-macro] trigger skip: range not collapsed');
+            ztDbg.log('[zt-macro] trigger skip: range not collapsed');
             return null;
         }
         const node = range.startContainer;
         if (node.nodeType !== Node.TEXT_NODE) {
-            console.log('[zt-macro] trigger skip: caret not in text node, nodeType=', node.nodeType, 'tagName=', node.tagName);
+            ztDbg.log('[zt-macro] trigger skip: caret not in text node, nodeType=', node.nodeType, 'tagName=', node.tagName);
             return null;
         }
         const offset = range.startOffset;
         const text = node.data || '';
-        console.log('[zt-macro] trigger inspect: text=', JSON.stringify(text), 'offset=', offset);
+        ztDbg.log('[zt-macro] trigger inspect: text=', JSON.stringify(text), 'offset=', offset);
 
         // Walk back from the caret. Accept name chars; stop at `/`,
         // whitespace, or other punctuation. The `//` must be immediately
@@ -2024,11 +2034,11 @@
         // i now points to the start of the partial (or to the offset
         // itself if the caret sits right after `//`).
         if (i < 2) {
-            console.log('[zt-macro] trigger skip: i<2 after walkback, i=', i);
+            ztDbg.log('[zt-macro] trigger skip: i<2 after walkback, i=', i);
             return null;
         }
         if (text.charAt(i - 1) !== '/' || text.charAt(i - 2) !== '/') {
-            console.log('[zt-macro] trigger skip: no // before partial. text[i-2..i]=', JSON.stringify(text.slice(i - 2, i)));
+            ztDbg.log('[zt-macro] trigger skip: no // before partial. text[i-2..i]=', JSON.stringify(text.slice(i - 2, i)));
             return null;
         }
 
@@ -2039,7 +2049,7 @@
         if (i - 2 > 0) {
             const before = text.charAt(i - 3);
             if (!/[\s(\[{>]/.test(before)) {
-                console.log('[zt-macro] trigger skip: glued before //, char=', JSON.stringify(before));
+                ztDbg.log('[zt-macro] trigger skip: glued before //, char=', JSON.stringify(before));
                 return null;
             }
         }
@@ -2049,7 +2059,7 @@
         const triggerRange = composer.ownerDocument.createRange();
         triggerRange.setStart(node, triggerStart);
         triggerRange.setEnd(node, offset);
-        console.log('[zt-macro] trigger MATCH: partial=', JSON.stringify(partial));
+        ztDbg.log('[zt-macro] trigger MATCH: partial=', JSON.stringify(partial));
         return { partial, range: triggerRange };
     }
 
@@ -2094,7 +2104,7 @@
         if (!menu) return;
         menu.innerHTML = '';
         const items = macroAutocomplete.items;
-        console.log('[zt-macro] rendering menu with', items.length, 'items:', items);
+        ztDbg.log('[zt-macro] rendering menu with', items.length, 'items:', items);
         if (items.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'zt-macro-menu-empty';
@@ -2138,7 +2148,7 @@
         const menu = macroAutocomplete.menu;
         if (!menu || !triggerRange) return;
         const rect = triggerRange.getBoundingClientRect();
-        console.log('[zt-macro] positioning menu, trigger rect=', {
+        ztDbg.log('[zt-macro] positioning menu, trigger rect=', {
             top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right,
             width: rect.width, height: rect.height,
         });
@@ -2214,6 +2224,44 @@
     // Insertion
     // -----------------------------
 
+    // The macros editor encodes visible blank lines as `<div><br></div>`
+    // (or `<p><br></p>`) — the user types Enter twice and the editor
+    // inserts an empty block. But CKEditor 5's paste pipeline filters
+    // out truly-empty block elements, so those sentinels disappear and
+    // the agent sees a wall of text without the gaps they authored.
+    //
+    // Fix: rewrite any empty / br-only / nbsp-only block element into
+    // `<p>&nbsp;</p>`. The non-breaking space gives the paragraph
+    // non-empty content that survives the paste filter, and CKEditor
+    // renders it as a visible blank line — matching what the agent saw
+    // in the macros editor.
+    function normalizeMacroHtmlForInsertion(html) {
+        if (!html) return '';
+
+        // Text-level regex replacement of blank block elements. Earlier
+        // attempts walked the DOM and inspected `el.innerHTML`, but for
+        // reasons we couldn't pin down (browser-specific serialization?
+        // hidden whitespace? overzealous parser fixup?) the empty
+        // `<div><br></div>` blocks were never matching. Regex on the
+        // raw HTML string is faster and isn't subject to those quirks.
+        //
+        // Match: <div> or <p> (any attrs) containing only any combo of
+        // whitespace, <br> (any attrs), &nbsp; entities, or literal
+        // U+00A0 chars. Replace with a CKEditor-friendly sentinel: a
+        // <p> with a literal NBSP text content. The NBSP is a real text
+        // character in the model (not a CSS rule, not a filler attr),
+        // so CKEditor 5's paste pipeline can't strip it as "empty".
+        const blankBlockRegex = /<(div|p)\b[^>]*>(?:\s|<br\b[^>]*\/?>|&nbsp;|\u00A0)*<\/\1>/gi;
+        let blanksReplaced = 0;
+        const result = html.replace(blankBlockRegex, () => {
+            blanksReplaced++;
+            return '<p>\u00A0</p>';
+        });
+
+        ztDbg.log('[zt-macro] normalize: input', html.length, 'chars; output', result.length, 'chars; blanks replaced=', blanksReplaced);
+        return result;
+    }
+
     function commitSelectedMacro() {
         const name = macroAutocomplete.items[macroAutocomplete.activeIndex];
         const composer = macroAutocomplete.composer;
@@ -2247,32 +2295,76 @@
             return;
         }
 
-        // Select the trigger fragment, then dispatch a synthetic paste.
-        // CKEditor 5 picks up the paste, replaces the selection with
-        // the HTML, and runs its own normalization. This is the same
-        // mechanism the reply-translate flow uses.
+        const normalizedBody = normalizeMacroHtmlForInsertion(macro.body);
+        ztDbg.log('[zt-macro] commit start, name=', name, 'bodyLen=', normalizedBody.length);
+
+        // Strategy:
+        //   1. Set the DOM selection to cover the `//partial` trigger.
+        //   2. Defer the synthetic paste to the next event-loop tick.
+        //
+        // CKEditor 5's SelectionObserver syncs its model selection from
+        // the DOM only on async `selectionchange` events. Earlier
+        // versions did synchronous DOM surgery to remove the `//` first
+        // — but CKEditor's MutationObserver reverted the deletion (its
+        // model still had `//`), so the paste landed AFTER the restored
+        // `//` and the trigger persisted.
+        //
+        // The setTimeout(0) delay gives CKEditor's selection observer
+        // a chance to sync the model selection. When the paste fires,
+        // its clipboard plugin sees a non-collapsed model selection
+        // covering `//`, deletes that, and inserts the macro in its
+        // place — atomically.
         sel.removeAllRanges();
         sel.addRange(replaceRange);
+        ztDbg.log('[zt-macro] selection set, range text=', JSON.stringify(replaceRange.toString()));
 
-        try {
-            const dt = new DataTransfer();
-            dt.setData('text/plain', textOnly(macro.body));
-            dt.setData('text/html', macro.body);
-            const pasteEvent = new ClipboardEvent('paste', {
-                clipboardData: dt,
-                bubbles: true,
-                cancelable: true,
-            });
-            composer.dispatchEvent(pasteEvent);
-            ztDbg.log('[zt-macro] inserted', name, '(', macro.body.length, 'chars )');
-        } catch (err) {
-            console.error('[zt-macro] paste dispatch failed:', err);
-            // Fallback: insertHTML (deprecated but works in current
-            // Chromium for contenteditable).
+        // Snapshot composer state for post-mortem.
+        const beforeHtml = composer.innerHTML;
+
+        setTimeout(() => {
             try {
-                composer.ownerDocument.execCommand('insertHTML', false, macro.body);
-            } catch (_) {}
-        }
+                const dt = new DataTransfer();
+                dt.setData('text/plain', textOnly(normalizedBody));
+                dt.setData('text/html', normalizedBody);
+                const pasteEvent = new ClipboardEvent('paste', {
+                    clipboardData: dt,
+                    bubbles: true,
+                    cancelable: true,
+                });
+                const dispatched = composer.dispatchEvent(pasteEvent);
+                ztDbg.log('[zt-macro] paste dispatched, defaultPrevented=', pasteEvent.defaultPrevented, 'returned=', dispatched);
+
+                // Dump the composer HTML 100ms after paste so we can see
+                // what CKEditor actually produced — useful for diagnosing
+                // both trigger persistence and paragraph-spacing issues.
+                setTimeout(() => {
+                    const afterHtml = composer.innerHTML;
+                    ztDbg.log('[zt-macro] composer.innerHTML BEFORE paste:', beforeHtml.slice(0, 400));
+                    ztDbg.log('[zt-macro] composer.innerHTML AFTER  paste:', afterHtml.slice(0, 800));
+                    ztDbg.log('[zt-macro] inserted body was:', normalizedBody.slice(0, 400));
+                }, 100);
+
+                // After the body has settled, dispatch the attachment
+                // drop. Even if attachMacroFiles is async we don't await
+                // — the composer is already populated, and a slow
+                // attachment chain shouldn't block the rest of the
+                // commit cleanup.
+                if (macro.attachments && macro.attachments.length > 0) {
+                    attachMacroFiles(composer, macro.attachments).catch((err) => {
+                        console.error('[zt-macro] attachMacroFiles failed:', err);
+                    });
+                }
+            } catch (err) {
+                console.error('[zt-macro] paste dispatch failed:', err);
+                try {
+                    const ok = composer.ownerDocument.execCommand('insertHTML', false, normalizedBody);
+                    ztDbg.log('[zt-macro] execCommand insertHTML fallback returned=', ok);
+                } catch (e2) {
+                    console.error('[zt-macro] execCommand fallback also failed:', e2);
+                }
+            }
+        }, 0);
+
         closeMacroMenu();
     }
 
@@ -2286,6 +2378,147 @@
     }
 
     // -----------------------------
+    // Macro attachment dispatch (Phase 4 #15)
+    // -----------------------------
+    //
+    // After the macro body is pasted into the reply composer, look up
+    // any PDF attachments stored against the macro and inject them
+    // into the reply via a synthetic drop event. Zendesk's Lotus reply
+    // form treats files dropped onto the composer area the same as a
+    // user drag-drop, routing them through its normal upload pipeline
+    // and showing them as attachment chips below the body.
+    //
+    // Storage: blobs are kept as base64 in
+    //   chrome.storage.local.macroAttachments = { <id>: <base64> }
+    // (See macros.js — Phase A wrote this code.) We read on-demand
+    // rather than caching all attachments in memory because a team
+    // can easily end up with tens of MB of canned PDFs.
+
+    function loadAttachmentBlobs(ids) {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['macroAttachments'], (r) => {
+                const index = (r && r.macroAttachments) || {};
+                resolve(ids.map(id => ({ id, base64: index[id] || null })));
+            });
+        });
+    }
+
+    function base64ToBlob(base64, mimeType) {
+        // Standard base64 → Uint8Array → Blob round trip. atob/btoa
+        // are byte-oriented; for binary data this is exactly right.
+        const bin = atob((base64 || '').replace(/\s+/g, ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: mimeType || 'application/pdf' });
+    }
+
+    // Walk up from the composer looking for a file input descendant
+    // anywhere in an ancestor's subtree. The reply form's hidden file
+    // input is what the "Attach" button drives; setting `.files` on it
+    // and firing `change` is the React-friendly upload path.
+    function findReplyFileInput(composer) {
+        let el = composer;
+        while (el && el !== document.body) {
+            // Prefer one that explicitly accepts PDFs / has an
+            // attachment-ish test id.
+            const specific = el.querySelector(
+                'input[type="file"][accept*="pdf"], ' +
+                'input[type="file"][data-test-id*="attach" i], ' +
+                'input[type="file"][data-test-id*="upload" i]'
+            );
+            if (specific) return specific;
+            el = el.parentElement;
+        }
+        // Last-resort: any file input anywhere on the page that's not a
+        // chat / messaging widget (those tend to live in iframes anyway).
+        return document.querySelector('input[type="file"]');
+    }
+
+    async function attachMacroFiles(composer, attachments) {
+        if (!attachments || attachments.length === 0) return;
+        ztDbg.log('[zt-macro] attaching', attachments.length, 'file(s) to composer');
+
+        const blobs = await loadAttachmentBlobs(attachments.map(a => a.id));
+        const dataTransfer = new DataTransfer();
+        let attached = 0;
+
+        for (let i = 0; i < attachments.length; i++) {
+            const att = attachments[i];
+            const slot = blobs[i];
+            if (!slot || !slot.base64) {
+                console.warn('[zt-macro] attachment blob missing for', att.id, '(', att.name, ')');
+                continue;
+            }
+            try {
+                const blob = base64ToBlob(slot.base64, att.type);
+                const file = new File([blob], att.name, {
+                    type: att.type || 'application/pdf',
+                    lastModified: Date.now(),
+                });
+                dataTransfer.items.add(file);
+                attached++;
+            } catch (err) {
+                console.error('[zt-macro] failed to materialize attachment', att.name, err);
+            }
+        }
+
+        if (attached === 0) {
+            console.warn('[zt-macro] no attachments materialized; skipping upload');
+            return;
+        }
+
+        // Strategy 1: file-input upload. Find Zendesk's hidden file
+        // input (the one wired up to the "Attach" button), set
+        // `.files = dataTransfer.files`, dispatch `change`. This is
+        // exactly what a real user click on the file picker produces,
+        // so React/Lotus state updates correctly and no drag-drop
+        // overlay is involved.
+        const fileInput = findReplyFileInput(composer);
+        if (fileInput) {
+            try {
+                fileInput.files = dataTransfer.files;
+                fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                ztDbg.log('[zt-macro] uploaded via file input:',
+                    fileInput.dataset && fileInput.dataset.testId
+                        ? `[data-test-id="${fileInput.dataset.testId}"]`
+                        : (fileInput.className || '(unnamed)'));
+                return;
+            } catch (err) {
+                console.warn('[zt-macro] file-input upload failed, falling back to drop:', err);
+            }
+        } else {
+            console.warn('[zt-macro] no file input found; falling back to drop');
+        }
+
+        // Strategy 2 (fallback): synthetic drop on document.body.
+        // Crucially we do NOT fire dragenter/dragover — Zendesk has a
+        // global dragenter listener that pops up a "Drop to Attach"
+        // overlay, and if our drop isn't aimed at the overlay's own
+        // drop zone the overlay gets stuck. Drop alone keeps the UI
+        // quiet; if there's a global drop handler somewhere it'll
+        // catch this through normal bubbling.
+        try {
+            const dropEvt = new DragEvent('drop', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                dataTransfer,
+            });
+            const ok = document.body.dispatchEvent(dropEvt);
+            ztDbg.log('[zt-macro] fallback drop on document.body: defaultPrevented=',
+                dropEvt.defaultPrevented, 'returned=', ok);
+            // Defensive cleanup in case any listener got into a stuck
+            // drag state earlier — fire dragleave/dragend so any
+            // stray "Drop to Attach" overlays dismiss.
+            document.body.dispatchEvent(new DragEvent('dragleave', { bubbles: true }));
+            document.body.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+        } catch (err) {
+            console.error('[zt-macro] fallback drop dispatch failed:', err);
+        }
+    }
+
+    // -----------------------------
     // Document-level listeners
     // -----------------------------
 
@@ -2293,36 +2526,73 @@
         if (window.__ztMacroAutocompleteInstalled) return;
         window.__ztMacroAutocompleteInstalled = true;
 
-        // Recompute trigger on every input. Cheap: a single Selection
-        // walk over the text node containing the caret.
-        const onInput = (ev) => {
+        // Shared trigger-evaluation: locate the active composer (either
+        // from the event target or by walking up from the caret) and
+        // either open / update / close the menu accordingly. Used by
+        // multiple listeners since CKEditor's beforeinput / input events
+        // don't always fire when we'd expect (e.g. backspace).
+        const reevaluateTrigger = (eventTarget) => {
             if (!isEnabled) { closeMacroMenu(); return; }
-            const composer = ev.target && ev.target.closest
-                ? ev.target.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]')
-                : null;
+            let composer = null;
+            if (eventTarget && eventTarget.closest) {
+                composer = eventTarget.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]');
+            }
             if (!composer) {
-                // Most input events come from outside the composer
-                // (other Zendesk fields, the page itself). Don't log
-                // those — would be too noisy.
+                // Fall back to the focused element / caret container.
+                const sel = document.getSelection && document.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                    let node = sel.getRangeAt(0).startContainer;
+                    if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+                    if (node && node.closest) {
+                        composer = node.closest('[contenteditable="true"][data-test-id="omnicomposer-rich-text-ckeditor"]');
+                    }
+                }
+            }
+            if (!composer) {
                 closeMacroMenu();
                 return;
             }
             if (!isElementVisible(composer)) {
-                console.log('[zt-macro] input skip: composer not visible');
                 closeMacroMenu();
                 return;
             }
-            console.log('[zt-macro] input event on composer, type=', ev.type);
-
             const trigger = findMacroTriggerAtCaret(composer);
             if (!trigger) {
                 closeMacroMenu();
                 return;
             }
-            console.log('[zt-macro] opening menu with', Object.keys(macros).length, 'macros loaded; partial=', JSON.stringify(trigger.partial));
             openOrUpdateMacroMenu(composer, trigger);
         };
+
+        // Recompute trigger on every input. Cheap: a single Selection
+        // walk over the text node containing the caret.
+        const onInput = (ev) => {
+            ztDbg.log('[zt-macro] input event, type=', ev.type, 'inputType=', ev.inputType);
+            reevaluateTrigger(ev.target);
+        };
         document.addEventListener('input', onInput, true);
+
+        // Backstop for cases where CKEditor swallows the input event
+        // (notably backspace inside an empty paragraph). selectionchange
+        // fires on every caret movement, so it will catch the case
+        // where the user deletes `//` and the menu should close.
+        const onSelectionChange = () => {
+            if (!macroAutocomplete.menu) return;  // only relevant when menu is open
+            // Use the existing composer if known; otherwise fall back to
+            // the caret node lookup inside reevaluateTrigger.
+            reevaluateTrigger(macroAutocomplete.composer);
+        };
+        document.addEventListener('selectionchange', onSelectionChange, true);
+
+        // Additional fallback: keyup catches deletions that don't
+        // produce input events (Backspace at start of block in some
+        // CKEditor versions).
+        const onKeyUp = (ev) => {
+            if (ev.key === 'Backspace' || ev.key === 'Delete') {
+                reevaluateTrigger(ev.target);
+            }
+        };
+        document.addEventListener('keyup', onKeyUp, true);
 
         // Keyboard navigation. Capture phase so we beat CKEditor's own
         // handlers (which would otherwise eat ArrowDown / Enter).
@@ -2362,6 +2632,10 @@
     // ============================================
     // INITIALIZATION
     // ============================================
+
+    let mainObserver = null;
+    let pollTimer = null;
+    let currentTicketId = null;
 
     function getTicketIdFromUrl() {
         const m = location.pathname.match(/\/agent\/tickets\/(\d+)/);
