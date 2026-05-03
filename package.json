@@ -1,6 +1,6 @@
 {
   "name": "zendesk-auto-translate",
-  "version": "2.0.1",
+  "version": "2.0.4",
   "private": true,
   "description": "Internal Chrome extension for Mac Group Global. This package.json exists for the test harness only — the extension itself ships as a Manifest V3 unpacked extension and has no Node runtime dependencies.",
   "scripts": {

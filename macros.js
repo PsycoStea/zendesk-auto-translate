@@ -30,6 +30,9 @@
     const elDeleteBtn = document.getElementById('deleteMacroBtn');
     const elSaveStatus = document.getElementById('saveStatus');
 
+    // Per-macro options (v2.0.4+).
+    const elAutoTranslateToggle = document.getElementById('autoTranslateToggle');
+
     // Attachment UI refs (Phase 4 #15).
     const elAttachmentsList = document.getElementById('attachmentsList');
     const elAttachmentInput = document.getElementById('attachmentInput');
@@ -306,6 +309,7 @@
         currentEditingName = name;
         elName.value = name;
         elBody.innerHTML = m.body || '';
+        elAutoTranslateToggle.checked = !!m.autoTranslate;
         // Clone the attachment metadata so edits don't mutate storage
         // until the user explicitly saves.
         currentAttachments = (m.attachments || []).map(a => Object.assign({}, a));
@@ -325,6 +329,7 @@
         currentEditingName = null;
         elName.value = '';
         elBody.innerHTML = '';
+        elAutoTranslateToggle.checked = false;
         currentAttachments = [];
         elDeleteBtn.disabled = true;
         showEditor();
@@ -389,6 +394,7 @@
         macros[newName] = {
             body,
             attachments: currentAttachments.map(a => Object.assign({}, a)),
+            autoTranslate: !!elAutoTranslateToggle.checked,
             updated: Date.now(),
         };
 
@@ -610,6 +616,7 @@
 
     elName.addEventListener('input', markDirty);
     elBody.addEventListener('input', markDirty);
+    elAutoTranslateToggle.addEventListener('change', markDirty);
 
     elFilter.addEventListener('input', renderList);
     elNewBtn.addEventListener('click', beginCreate);
@@ -702,6 +709,7 @@
             name,
             body: macro.body || '',
             updated: macro.updated || Date.now(),
+            autoTranslate: !!macro.autoTranslate,
             attachments,
         }, null, 2);
     }
@@ -947,6 +955,7 @@
             const macroContentsEquivalent = (local, remote) => {
                 if (!local) return false;
                 if ((local.body || '') !== (remote.body || '')) return false;
+                if (!!local.autoTranslate !== !!remote.autoTranslate) return false;
                 const la = local.attachments || [];
                 const ra = Array.isArray(remote.attachments) ? remote.attachments : [];
                 if (la.length !== ra.length) return false;
@@ -988,6 +997,7 @@
                 macros[remoteName] = {
                     body: remote.body,
                     attachments: localAttachments,
+                    autoTranslate: !!remote.autoTranslate,
                     // Use remote's updated when available so the next
                     // push correctly sees this as already-synced. Fall
                     // back to now() if remote omitted the field.

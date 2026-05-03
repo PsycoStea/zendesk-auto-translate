@@ -2295,8 +2295,17 @@
             return;
         }
 
-        const normalizedBody = normalizeMacroHtmlForInsertion(macro.body);
-        ztDbg.log('[zt-macro] commit start, name=', name, 'bodyLen=', normalizedBody.length);
+        // If auto-translate is on, the macro body is about to be replaced
+        // by the bilingual reply-translation output, so any `{{cursor}}`
+        // marker is moot. Strip the marker before normalization so a
+        // line that ONLY contained the marker becomes an empty block
+        // and gets normal blank-line-sentinel treatment.
+        let bodyForInsert = macro.body || '';
+        if (macro.autoTranslate) {
+            bodyForInsert = bodyForInsert.replace(/\{\{cursor\}\}/g, '');
+        }
+        const normalizedBody = normalizeMacroHtmlForInsertion(bodyForInsert);
+        ztDbg.log('[zt-macro] commit start, name=', name, 'bodyLen=', normalizedBody.length, 'autoTranslate=', !!macro.autoTranslate);
 
         // Strategy:
         //   1. Set the DOM selection to cover the `//partial` trigger.
@@ -2348,7 +2357,24 @@
                     ztDbg.log('[zt-macro] composer.innerHTML BEFORE paste:', beforeHtml.slice(0, 400));
                     ztDbg.log('[zt-macro] composer.innerHTML AFTER  paste:', afterHtml.slice(0, 800));
                     ztDbg.log('[zt-macro] inserted body was:', normalizedBody.slice(0, 400));
-                    placeCaretAtCursorMarker(composer);
+
+                    if (macro.autoTranslate) {
+                        // Body in composer is the macro source; runReplyTranslate
+                        // reads it, calls translate() (cache-keyed by full source
+                        // text + target lang — same macro will hit cache forever),
+                        // and replaces the composer with [translated]---[english].
+                        if (!detectedCustomerLanguage) {
+                            console.log('[zt-macro] auto-translate skipped: no customer language detected for this ticket');
+                        } else {
+                            console.log('[zt-macro] auto-translating macro after insertion, target=', detectedCustomerLanguage);
+                            const triggerBtn = window.ztReplyButton || null;
+                            runReplyTranslate(composer, triggerBtn).catch(err => {
+                                console.error('[zt-macro] auto-translate failed:', err);
+                            });
+                        }
+                    } else {
+                        placeCaretAtCursorMarker(composer);
+                    }
                 }, 100);
 
                 // After the body has settled, dispatch the attachment
@@ -2387,67 +2413,145 @@
     // Cursor placement marker for macros. The macro author types
     // `{{cursor}}` (or clicks the toolbar button in the editor) at the
     // position they want the caret to land after insertion. After paste,
-    // we walk the composer's text nodes, splice the marker out of each
-    // one we find, and place the selection at the first occurrence's
-    // position. If the marker is absent (legacy macros, plain snippets
-    // without explicit cursor positioning), the caret falls back to
-    // wherever CKEditor placed it after the paste — usually the end of
-    // the inserted content.
+    // we walk the composer's text nodes for the marker, set the DOM
+    // selection over it, defer with setTimeout(0) so CKEditor 5's
+    // SelectionObserver syncs the model selection, then call
+    // execCommand('delete'). CKEditor handles the deletion through its
+    // own pipeline (the model + DOM stay in sync, and the caret lands
+    // where the deletion happened) — direct text-node manipulation
+    // would be reverted by CKEditor's MutationObserver, which is why
+    // the v1 of this function silently failed.
+    //
+    // Falls back to current behavior (caret at end of inserted block)
+    // when no marker is present.
     function placeCaretAtCursorMarker(composer) {
         const MARKER = '{{cursor}}';
-        const matches = [];
         const walker = composer.ownerDocument.createTreeWalker(
             composer, NodeFilter.SHOW_TEXT, null
         );
+        let firstNode = null;
+        let firstOffset = -1;
+        let matchCount = 0;
         let node;
         while ((node = walker.nextNode())) {
-            let from = 0;
-            for (;;) {
-                const idx = node.data.indexOf(MARKER, from);
-                if (idx < 0) break;
-                matches.push({ node, idx });
-                from = idx + MARKER.length;
+            const idx = node.data.indexOf(MARKER);
+            if (idx >= 0) {
+                if (firstNode === null) {
+                    firstNode = node;
+                    firstOffset = idx;
+                }
+                matchCount++;
             }
         }
-        if (matches.length === 0) return false;
+        console.log('[zt-macro] cursor-marker scan: matches=', matchCount);
+        if (firstNode === null) return false;
 
-        // Splice the markers out from last to first so earlier offsets
-        // stay valid. Do it in reverse on each text node.
-        const byNode = new Map();
-        for (const m of matches) {
-            const arr = byNode.get(m.node) || [];
-            arr.push(m.idx);
-            byNode.set(m.node, arr);
-        }
-        let firstNode = matches[0].node;
-        let firstOffset = matches[0].idx;
-        for (const [n, idxs] of byNode) {
-            // Sort descending so the first splice doesn't shift later ones.
-            idxs.sort((a, b) => b - a);
-            for (const idx of idxs) {
-                n.data = n.data.slice(0, idx) + n.data.slice(idx + MARKER.length);
-            }
-            // If this is the first-marker node, the FIRST occurrence had
-            // the lowest idx (which is the last item after the descending
-            // sort) — its position is preserved as `firstOffset` because
-            // any prior splices are no-ops (it's the smallest idx).
-        }
-
-        // Place caret. firstOffset is unchanged: every splice in this node
-        // happened at indices >= firstOffset, so chars before it didn't shift.
+        // Set the DOM selection over the marker. CKEditor's
+        // SelectionObserver fires on the next async tick and syncs its
+        // model selection from the DOM selection — by that time we
+        // dispatch the delete, the model selection covers exactly the
+        // marker text, so the deletion is clean.
         try {
             const range = composer.ownerDocument.createRange();
-            range.setStart(firstNode, Math.min(firstOffset, firstNode.data.length));
-            range.collapse(true);
+            range.setStart(firstNode, firstOffset);
+            range.setEnd(firstNode, firstOffset + MARKER.length);
             const sel = composer.ownerDocument.getSelection();
             sel.removeAllRanges();
             sel.addRange(range);
-            ztDbg.log('[zt-macro] caret placed at {{cursor}} marker (', matches.length, 'occurrence(s) removed)');
-            return true;
+            console.log('[zt-macro] cursor-marker selection set, text=',
+                JSON.stringify(range.toString()));
         } catch (err) {
-            console.warn('[zt-macro] failed to place caret at cursor marker:', err);
+            console.warn('[zt-macro] failed to set selection over cursor marker:', err);
             return false;
         }
+
+        // Defer the delete to the next event-loop tick so CKEditor's
+        // selection observer can sync. v2.0.2 used execCommand('delete')
+        // which returned true but didn't actually remove anything —
+        // CKEditor 5's back-compat layer accepts the call but no-ops.
+        // The reliable path is `beforeinput` with `deleteContentBackward`,
+        // which is the specific event CKEditor 5's delete plugin
+        // listens for. With the model selection covering `{{cursor}}`,
+        // the plugin deletes the range and the caret lands where the
+        // deletion happened.
+        //
+        // Fallback: if `beforeinput` isn't consumed (older Lotus skins?),
+        // dispatch a synthetic empty-content paste — CKEditor's paste
+        // pipeline replaces the selection with the (empty) clipboard
+        // payload, which has the same delete-and-position-caret effect.
+        setTimeout(() => {
+            let consumed = false;
+            try {
+                const evt = new InputEvent('beforeinput', {
+                    inputType: 'deleteContentBackward',
+                    bubbles: true,
+                    cancelable: true,
+                });
+                composer.dispatchEvent(evt);
+                consumed = evt.defaultPrevented;
+                console.log('[zt-macro] cursor-marker delete via beforeinput, defaultPrevented=', consumed);
+            } catch (err) {
+                console.warn('[zt-macro] beforeinput dispatch failed:', err);
+            }
+
+            // Verify the marker actually went away. If it didn't, fall
+            // back to synthetic empty paste over the (still-selected)
+            // marker.
+            setTimeout(() => {
+                if ((composer.textContent || '').includes('{{cursor}}')) {
+                    console.warn('[zt-macro] beforeinput did not remove the marker; trying empty-paste fallback');
+                    try {
+                        const dt = new DataTransfer();
+                        dt.setData('text/plain', '');
+                        dt.setData('text/html', '');
+                        const pasteEvent = new ClipboardEvent('paste', {
+                            clipboardData: dt,
+                            bubbles: true,
+                            cancelable: true,
+                        });
+                        composer.dispatchEvent(pasteEvent);
+                        console.log('[zt-macro] cursor-marker fallback paste, defaultPrevented=', pasteEvent.defaultPrevented);
+                    } catch (err) {
+                        console.error('[zt-macro] fallback paste dispatch failed:', err);
+                    }
+
+                    // Last-ditch: still here? Try DOM surgery directly
+                    // (CKEditor may revert, but at least we tried).
+                    setTimeout(() => {
+                        if ((composer.textContent || '').includes('{{cursor}}')) {
+                            console.warn('[zt-macro] marker still present after fallbacks; using direct DOM splice');
+                            const walker2 = composer.ownerDocument.createTreeWalker(
+                                composer, NodeFilter.SHOW_TEXT, null
+                            );
+                            let n2;
+                            while ((n2 = walker2.nextNode())) {
+                                const i = n2.data.indexOf(MARKER);
+                                if (i >= 0) {
+                                    n2.data = n2.data.slice(0, i) + n2.data.slice(i + MARKER.length);
+                                    try {
+                                        const r = composer.ownerDocument.createRange();
+                                        r.setStart(n2, i);
+                                        r.collapse(true);
+                                        const s = composer.ownerDocument.getSelection();
+                                        s.removeAllRanges();
+                                        s.addRange(r);
+                                    } catch (_) {}
+                                    break;
+                                }
+                            }
+                        }
+                    }, 50);
+                }
+            }, 30);
+
+            // If there are additional markers (rare — the editor button
+            // refuses to insert a second one), recurse to remove them.
+            if (matchCount > 1) {
+                setTimeout(() => placeCaretAtCursorMarker(composer), 150);
+            }
+        }, 0);
+
+        return true;
     }
 
     // -----------------------------

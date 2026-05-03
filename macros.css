@@ -395,6 +395,31 @@ body {
 .zt-macros-rte ul, .zt-macros-rte ol { margin: 0 0 0.6em 1.5em; }
 .zt-macros-rte a { color: #1f73b7; }
 
+/* ---------------- Checkbox row ---------------- */
+
+.zt-macros-checkfield {
+    margin-bottom: 16px;
+}
+
+.zt-macros-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #2f3941;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.zt-macros-checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #1f73b7;
+}
+
 /* ---------------- Attachments ---------------- */
 
 .zt-attachments-list {

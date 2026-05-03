@@ -98,6 +98,21 @@
                     </div>
                 </div>
 
+                <div class="zt-macros-field zt-macros-checkfield">
+                    <label class="zt-macros-checkbox">
+                        <input type="checkbox" id="autoTranslateToggle">
+                        <span>Auto-translate after insertion</span>
+                    </label>
+                    <div class="zt-macros-hint">
+                        When enabled, inserting this macro in a non-English ticket runs the reply-translate flow
+                        automatically — the macro body gets replaced with the customer-language translation followed
+                        by the English source under <code>---</code>. Pairs with the cache: same macro + same
+                        language = instant hit on every later insertion. (When this is on, any
+                        <code>&#123;&#123;cursor&#125;&#125;</code> marker in the body is ignored, since the body
+                        is rewritten by translation.)
+                    </div>
+                </div>
+
                 <div class="zt-macros-field">
                     <label>PDF attachments</label>
                     <div id="attachmentsList" class="zt-attachments-list" role="list"></div>
