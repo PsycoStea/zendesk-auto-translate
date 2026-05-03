@@ -377,8 +377,78 @@ Resolved open questions:
 
 ---
 
+## Phase 5 — Post-v2.0 patches (emergent from field testing)
+
+Items 16–22 weren't on the original v2 plan — they came out of using the v2.0.0 build in real tickets, where the macro/sync/attachment work surfaced edge cases and small UX gaps. Each shipped as a v2.0.x patch.
+
+### 16. ✅ Hyperlink corruption when link text equals href (v2.0.7 / shipped under v2.0.0 commit)
+
+**Symptom:** agent pasted a bare URL into the reply, Zendesk auto-wrapped it as `<a href="URL">URL</a>`, translation produced an `<a>` whose `href` was the literal `{{ztlink0}}` token. When the message was sent, the browser resolved that as relative to the current page (e.g. `https://refurbed-merchant.zendesk.com/{{ztlink0}}`), breaking the link.
+
+**Root cause:** in `src/translate-core.js`'s `protectUrls`, after the markdown-link regex tokenized the link as `[https://example.com]({{ztlink0}})`, the bare-URL regex's character class `[^\s<>"'\``]+` didn't exclude `]`, `)`, `}` — it over-captured into the brackets/token, producing `[{{ztlink1}})`.
+
+**Fix:** tightened the bare-URL char class to `[^\s<>"'\``\])}]+` so it stops at markdown-link/token boundaries. Two regression tests added (`tests/url-protection.test.js`).
+
+### 17. ✅ Cache key collisions (v2.0.0 commit)
+
+**Symptom:** agents reported translations coming back from cache as the wrong sentence — e.g. "I have reached out to the courier to find out more as to what is happening with the delivery of your parcel" returning German for "...your order. We'll keep you updated...".
+
+**Root cause:** the cache key was constructed as `${CACHE_VERSION}:${text.slice(0, 100)}_${targetLang}` — only the first 100 characters of the source were used. Any two messages sharing a 100-char prefix collided and returned the same translation. The truncation was a defense against an imagined storage-size concern that never materialized.
+
+**Fix:** use the full source text as the key. Cache version bumped from `v5` to `v6` so polluted entries are unreachable and evict naturally.
+
+### 18. ✅ Cursor position marker for macros (v2.0.1, refined v2.0.4)
+
+**Why:** templates like `Hi {{name}}\nThanks for the email\n\n[blank]\n\nRegards,\nMac Group` always landed the caret at the end of the inserted block; agents had to manually arrow up three lines to start typing.
+
+**Solution:** macro authors place a `{{cursor}}` marker (toolbar button: ↳ Cursor) in the macro body where they want the caret. After paste, the extension finds the marker, removes it, and parks the caret there.
+
+**Implementation note:** the first cut (v2.0.1) tried direct text-node `data` mutation; CKEditor 5's MutationObserver reverted it. v2.0.2 tried `execCommand('delete')` — returned `true` but no-op'd in CKEditor's back-compat layer. v2.0.4 final: dispatch a `beforeinput` event with `inputType: 'deleteContentBackward'`, which is the actual event CKEditor's delete plugin listens for. Three-tier fallback (beforeinput → empty paste → DOM splice) for robustness against future Lotus changes.
+
+### 19. ✅ Auto-translate per macro (v2.0.4)
+
+**Why:** macros for non-English customers were inserted in English, then the agent had to manually click the translate flag every single time. Wasted seconds per ticket × hundreds of tickets per week.
+
+**Solution:** per-macro toggle "Auto-translate after insertion" in the macros editor. When on, after the macro pastes, the existing `runReplyTranslate` flow fires automatically — composer becomes `[translated]\n\n---\n\n[english]`.
+
+**Cache integration:** the v6 full-text cache is keyed by source text + target language, so the same macro body translated to the same language is an instant cache hit on every later insertion. Macros and the cache work hand-in-hand: canned text translates once, then it's free forever (until the macro body changes).
+
+**Sync:** `autoTranslate` field added to the per-macro JSON; the content-equivalence check in pull merges also compares the toggle. Macros with auto-translate on have `{{cursor}}` stripped before paste (the marker is moot when the body gets rewritten by translation).
+
+### 20. ✅ Pull merge fix: content-equivalence instead of timestamps (v1.0.66 / shipped under v2.0.0 commit)
+
+**Symptom:** field repro from initial v2.0.0 testing — delete a PDF locally, click Save (local `updated` jumps ahead of remote), click Pull. PDF didn't come back.
+
+**Root cause:** last-write-wins by timestamp suppressed the pull because local was "newer" by milliseconds.
+
+**Fix:** pull now compares local body + attachments metadata directly against remote. Identical → skip; different → take remote. Local-only macros (not on remote) are still preserved untouched. Trade-off: unpushed local edits get overwritten by Pull, which matches the "Pull = take what's on GitHub" mental model.
+
+### 21. ✅ Modern popup with light + dark mode (v2.0.5)
+
+**Why:** adding the "Manage macros…" button after Phase 4 #13 made the popup taller than Chrome's popup window — users got a vertical scrollbar. Existing styling was also dated (hard borders, large paddings, single-theme).
+
+**Done:**
+- CSS variables for all colors with `@media (prefers-color-scheme: dark)` override. `color-scheme: light dark` so form controls and scrollbars also follow the theme.
+- Compact layout — 320px width, smaller paddings, fits on screen without a scrollbar.
+- Fallback translator section moved into a collapsed `<details>` (auto-expands when one is configured).
+- Replaced the wide "Clear cache" button with a tiny inline button on the cache row.
+- `generate_icons.py` now produces both light (pastel-teal bg) and dark (deep-teal bg, pastel-teal text) icon variants for 16/48/128.
+- Manifest gains `theme_icons` so Chrome's toolbar icon follows the user's browser theme.
+- Popup header swaps icons via CSS `prefers-color-scheme`.
+
+(This invalidates the "Dark mode" item in the original "Out of scope for v2" list — it shipped here.)
+
+### 22. ✅ Cache row layout fix (v2.0.6)
+
+**Symptom:** at 320px popup width, the cache value `10 entries · 12/22 hits (55%)` wrapped to two lines and broke the "Clear" button alignment.
+
+**Fix:** restructured the row as a 3-column flex (label, value, button) with `flex: 1 1 auto` + `nowrap` on the value. Tightened the format string to `10 entries · 55% hit` so it fits on one line at typical sizes. Raw `12/22 hits` ratio dropped — the percentage is the actually-useful number, raw counts only matter for diagnostics and remain in `chrome.storage.local`.
+
+---
+
 ## Questions requiring answers before the relevant phase starts
 
+(All answered. Section retained for archival reference.)
 
 ---
 
@@ -387,12 +457,11 @@ Resolved open questions:
 Intentionally *not* shipping in v2 (parked for later):
 
 - Team telemetry / error reporting back to a lead
-- Dark mode (separate visual task)
 - Copy-translation-to-clipboard button
 - Translation quality indicators
 - Lazy / viewport-based translation
 
-These were considered and deliberately deferred to keep v2 scope finite.
+(Originally also listed: dark mode. Promoted into scope and shipped in v2.0.5.)
 
 ---
 
@@ -400,9 +469,12 @@ These were considered and deliberately deferred to keep v2 scope finite.
 
 Before sharing with the team:
 
-- [x] All 15 items above ✅
+- [x] All 15 Phase 1–4 items ✅
+- [x] Tagged on GitHub: `v2.0.0` (initial v2 release) and `v2.0.6` (latest patch)
+- [x] README rewritten for v2 (no version-history section; "What's new since v2.0" summary added)
 - [ ] QA checklist passes (extend existing `QA_CHECKLIST.md` with sections for each new feature)
 - [ ] CHANGELOG.md generated from version history
 - [ ] SETUP.md written for teammates (short, 6 steps)
 - [ ] Team announcement message drafted
-- [ ] Tag `v2.0.0`, not just `v1.0.30`
+
+(Final three items remain open — distribution is currently manual via zip; the team lead has the v2.0.6 build.)
