@@ -572,6 +572,24 @@
             const url = prompt('Link URL (will be inserted as <a href="…">):');
             if (!url) return;
             document.execCommand('createLink', false, url);
+        } else if (cmd === 'ztInsertCursor') {
+            // Custom: insert the literal `{{cursor}}` text at the
+            // current selection. Macro insertion (in content.js) walks
+            // the inserted body for this token after the paste settles
+            // and places the caret there, removing the marker.
+            //
+            // Refuse to insert a second one — multiple markers are
+            // valid (we de-dupe on insertion) but pointless, and
+            // visually noisy in the editor. Surface a status message
+            // so the agent knows why nothing happened.
+            if ((elBody.innerHTML || '').includes('{{cursor}}')) {
+                setStatus('This macro already has a cursor marker.', null);
+                setTimeout(clearStatus, 2500);
+                elBody.focus();
+                return;
+            }
+            elBody.focus();
+            document.execCommand('insertText', false, '{{cursor}}');
         } else {
             document.execCommand(cmd, false, null);
         }

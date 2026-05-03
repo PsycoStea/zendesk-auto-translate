@@ -88,9 +88,14 @@
                         <button type="button" data-cmd="unlink" title="Remove link" aria-label="Remove link">Unlink</button>
                         <span class="zt-macros-toolbar-sep" aria-hidden="true"></span>
                         <button type="button" data-cmd="removeFormat" title="Clear formatting" aria-label="Clear formatting">Clear</button>
+                        <span class="zt-macros-toolbar-sep" aria-hidden="true"></span>
+                        <button type="button" data-cmd="ztInsertCursor" title="Insert cursor marker — when this macro is inserted in a reply, the caret lands at this position. Use it on a blank line to start typing in the middle of a template." aria-label="Insert cursor marker">↳ Cursor</button>
                     </div>
                     <div id="macroBody" class="zt-macros-rte" contenteditable="true" spellcheck="true"
                         aria-label="Macro body" data-placeholder="Type the macro body. Formatting and Zendesk placeholders are preserved when inserted."></div>
+                    <div class="zt-macros-hint">
+                        Tip: click <strong>↳ Cursor</strong> to drop a <code>&#123;&#123;cursor&#125;&#125;</code> marker — when the macro is inserted in a reply, the caret will land there instead of at the end.
+                    </div>
                 </div>
 
                 <div class="zt-macros-field">

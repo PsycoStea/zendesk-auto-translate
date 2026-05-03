@@ -2337,11 +2337,18 @@
                 // Dump the composer HTML 100ms after paste so we can see
                 // what CKEditor actually produced — useful for diagnosing
                 // both trigger persistence and paragraph-spacing issues.
+                // Also: scan for a `{{cursor}}` placeholder in the just-
+                // inserted content and reposition the caret there. Lets
+                // the macro author mark where they want the agent to
+                // start typing (e.g. on the blank line between greeting
+                // and signature) instead of always landing at the end
+                // of the inserted block.
                 setTimeout(() => {
                     const afterHtml = composer.innerHTML;
                     ztDbg.log('[zt-macro] composer.innerHTML BEFORE paste:', beforeHtml.slice(0, 400));
                     ztDbg.log('[zt-macro] composer.innerHTML AFTER  paste:', afterHtml.slice(0, 800));
                     ztDbg.log('[zt-macro] inserted body was:', normalizedBody.slice(0, 400));
+                    placeCaretAtCursorMarker(composer);
                 }, 100);
 
                 // After the body has settled, dispatch the attachment
@@ -2375,6 +2382,72 @@
         const tmp = document.createElement('div');
         tmp.innerHTML = html || '';
         return (tmp.innerText || tmp.textContent || '').trim();
+    }
+
+    // Cursor placement marker for macros. The macro author types
+    // `{{cursor}}` (or clicks the toolbar button in the editor) at the
+    // position they want the caret to land after insertion. After paste,
+    // we walk the composer's text nodes, splice the marker out of each
+    // one we find, and place the selection at the first occurrence's
+    // position. If the marker is absent (legacy macros, plain snippets
+    // without explicit cursor positioning), the caret falls back to
+    // wherever CKEditor placed it after the paste — usually the end of
+    // the inserted content.
+    function placeCaretAtCursorMarker(composer) {
+        const MARKER = '{{cursor}}';
+        const matches = [];
+        const walker = composer.ownerDocument.createTreeWalker(
+            composer, NodeFilter.SHOW_TEXT, null
+        );
+        let node;
+        while ((node = walker.nextNode())) {
+            let from = 0;
+            for (;;) {
+                const idx = node.data.indexOf(MARKER, from);
+                if (idx < 0) break;
+                matches.push({ node, idx });
+                from = idx + MARKER.length;
+            }
+        }
+        if (matches.length === 0) return false;
+
+        // Splice the markers out from last to first so earlier offsets
+        // stay valid. Do it in reverse on each text node.
+        const byNode = new Map();
+        for (const m of matches) {
+            const arr = byNode.get(m.node) || [];
+            arr.push(m.idx);
+            byNode.set(m.node, arr);
+        }
+        let firstNode = matches[0].node;
+        let firstOffset = matches[0].idx;
+        for (const [n, idxs] of byNode) {
+            // Sort descending so the first splice doesn't shift later ones.
+            idxs.sort((a, b) => b - a);
+            for (const idx of idxs) {
+                n.data = n.data.slice(0, idx) + n.data.slice(idx + MARKER.length);
+            }
+            // If this is the first-marker node, the FIRST occurrence had
+            // the lowest idx (which is the last item after the descending
+            // sort) — its position is preserved as `firstOffset` because
+            // any prior splices are no-ops (it's the smallest idx).
+        }
+
+        // Place caret. firstOffset is unchanged: every splice in this node
+        // happened at indices >= firstOffset, so chars before it didn't shift.
+        try {
+            const range = composer.ownerDocument.createRange();
+            range.setStart(firstNode, Math.min(firstOffset, firstNode.data.length));
+            range.collapse(true);
+            const sel = composer.ownerDocument.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            ztDbg.log('[zt-macro] caret placed at {{cursor}} marker (', matches.length, 'occurrence(s) removed)');
+            return true;
+        } catch (err) {
+            console.warn('[zt-macro] failed to place caret at cursor marker:', err);
+            return false;
+        }
     }
 
     // -----------------------------
