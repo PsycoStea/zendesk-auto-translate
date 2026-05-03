@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zendesk Auto Translator",
-  "version": "2.0.4",
+  "version": "2.0.6",
   "description": "Automatically translate Zendesk customer messages to English and replies back to customer language",
   "permissions": [
     "storage",
@@ -24,7 +24,12 @@
       "16": "icon16.png",
       "48": "icon48.png",
       "128": "icon128.png"
-    }
+    },
+    "theme_icons": [
+      { "size": 16, "light": "icon16.png", "dark": "icon16-dark.png" },
+      { "size": 48, "light": "icon48.png", "dark": "icon48-dark.png" },
+      { "size": 128, "light": "icon128.png", "dark": "icon128-dark.png" }
+    ]
   },
   "content_scripts": [
     {

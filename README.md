@@ -7,6 +7,16 @@ Internal Chrome extension for the **Mac Group Global** customer service team. Au
 
 ---
 
+## What's new since v2.0
+
+- **Cursor position marker for macros** — drop a `{{cursor}}` marker in a macro (toolbar button: ↳ Cursor) and after the macro is inserted in the reply, the caret lands at that position instead of at the end.
+- **Auto-translate option per macro** — toggle "Auto-translate after insertion" in the macros editor. The macro inserts as usual, then the reply-translate flow runs automatically. Pairs with the translation cache so repeat insertions of the same macro hit cache instantly.
+- **Hyperlink fix** — pasted bare URLs in replies no longer get corrupted into a `{{ztlink0}}` href on translate.
+- **Cache pollution fix** — the translation memory now keys on the full source text instead of the first 100 characters, so similar messages no longer return each other's translations. Existing cache entries continue to evict naturally.
+- **Modernized popup with light/dark mode** — refreshed look, light and dark theme that follow your Chrome/OS preference, theme-aware toolbar icon, fits on screen without a scrollbar.
+
+---
+
 ## Features
 
 ### Translation

@@ -3,87 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body {
-            width: 340px;
-            padding: 16px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0;
+        /* ---------------- Theme tokens ---------------- */
+
+        :root {
+            color-scheme: light dark;
+
+            --bg: #ffffff;
+            --bg-card: #f6f8fa;
+            --bg-card-hover: #eef4fa;
+            --text: #1f2328;
+            --text-muted: #59636e;
+            --text-faint: #8c959f;
+            --border: #d8dee4;
+            --border-soft: #eaedef;
+            --accent: #1f73b7;
+            --accent-hover: #155a92;
+            --accent-bg: #eef6fc;
+            --success: #1a7f37;
+            --error: #cc3340;
+            --error-bg: #fef2f2;
+            --error-border: #fca5a5;
+            --indicator-active: #16a34a;
+            --indicator-inactive: #ef4444;
+            --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #161b22;
+                --bg-card: #1c232c;
+                --bg-card-hover: #232b35;
+                --text: #e6edf3;
+                --text-muted: #9ba9b9;
+                --text-faint: #6e7b8a;
+                --border: #2d343d;
+                --border-soft: #232930;
+                --accent: #58a6ff;
+                --accent-hover: #79b8ff;
+                --accent-bg: rgba(88, 166, 255, 0.12);
+                --success: #3fb950;
+                --error: #f85149;
+                --error-bg: rgba(248, 81, 73, 0.10);
+                --error-border: rgba(248, 81, 73, 0.40);
+                --indicator-active: #3fb950;
+                --indicator-inactive: #f85149;
+                --shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            width: 320px;
+            padding: 14px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        /* ---------------- Header ---------------- */
 
         .header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
+            gap: 10px;
+            margin-bottom: 12px;
         }
 
         .header img {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: block;
+        }
+
+        .header img.logo-light { display: block; }
+        .header img.logo-dark  { display: none; }
+
+        @media (prefers-color-scheme: dark) {
+            .header img.logo-light { display: none; }
+            .header img.logo-dark  { display: block; }
         }
 
         .header h1 {
             margin: 0;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
-            color: #2f3941;
+            letter-spacing: -0.01em;
         }
 
-        .version {
+        .header .version {
             font-size: 11px;
-            color: #999;
+            color: var(--text-faint);
             margin-left: auto;
+            font-variant-numeric: tabular-nums;
         }
 
-        .status-section {
-            background: #f5f7f9;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 16px;
+        /* ---------------- Status card ---------------- */
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            padding: 10px 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
         }
 
         .status-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
-            font-size: 13px;
+            font-size: 12.5px;
+            line-height: 1.6;
         }
 
-        .status-row:last-child {
-            margin-bottom: 0;
+        .status-row + .status-row {
+            margin-top: 2px;
         }
 
         .status-label {
-            color: #68737d;
-            font-weight: 500;
+            color: var(--text-muted);
         }
 
         .status-value {
-            color: #2f3941;
-            font-weight: 600;
+            color: var(--text);
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-variant-numeric: tabular-nums;
         }
 
-        .toggle-section {
+        .status-indicator {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--indicator-inactive);
+        }
+        .status-indicator.active { background: var(--indicator-active); }
+
+        /* ---------------- Toggle row ---------------- */
+
+        .toggle-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 0;
-            border-top: 1px solid #e5e7eb;
-            border-bottom: 1px solid #e5e7eb;
-            margin-bottom: 16px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            border-radius: 10px;
         }
 
         .toggle-label {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            color: #2f3941;
         }
 
         .toggle-switch {
             position: relative;
-            width: 44px;
-            height: 24px;
+            width: 36px;
+            height: 20px;
         }
 
         .toggle-switch input {
@@ -95,246 +183,270 @@
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: 0.3s;
-            border-radius: 24px;
+            inset: 0;
+            background: var(--border);
+            transition: 0.2s;
+            border-radius: 20px;
         }
 
         .slider:before {
             position: absolute;
             content: "";
-            height: 18px;
-            width: 18px;
+            height: 14px;
+            width: 14px;
             left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: 0.3s;
+            top: 3px;
+            background: #fff;
+            transition: 0.2s;
             border-radius: 50%;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
 
         input:checked + .slider {
-            background-color: #1f73b7;
+            background: var(--accent);
         }
 
         input:checked + .slider:before {
-            transform: translateX(20px);
+            transform: translateX(16px);
         }
 
-        .section-label {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: #2f3941;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 8px;
+        /* ---------------- Buttons ---------------- */
+
+        button {
+            font-family: inherit;
+            cursor: pointer;
         }
 
-        .provider-options {
+        .btn {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            border: 1px solid var(--accent);
+        }
+        .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-secondary {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            background: var(--accent-bg);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-tiny {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .btn-tiny:hover:not(:disabled) {
+            background: var(--error-bg);
+            color: var(--error);
+            border-color: var(--error-border);
+        }
+        .btn-tiny:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .row-buttons {
             display: flex;
-            flex-direction: column;
             gap: 8px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
-        .provider-option {
+        .row-buttons .btn { flex: 1 1 0; }
+
+        /* ---------------- Cache row inside status card ---------------- */
+
+        .cache-row {
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 13px;
-            color: #2f3941;
-            cursor: pointer;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border-soft);
+            font-size: 12.5px;
+            line-height: 1.6;
         }
 
-        .provider-option input[type="radio"] {
-            margin: 0;
-            cursor: pointer;
-        }
+        .cache-row .status-label { flex: 0 0 auto; }
 
-        .libre-fields {
-            display: none;
-            flex-direction: column;
-            gap: 8px;
-            margin-bottom: 12px;
-            padding: 10px;
-            background: #f5f7f9;
-            border-radius: 6px;
-        }
-
-        .libre-fields.visible {
-            display: flex;
-        }
-
-        .libre-fields label {
-            font-size: 11px;
-            color: #68737d;
+        .cache-row .cache-value {
+            flex: 1 1 auto;
+            text-align: right;
+            color: var(--text);
             font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-variant-numeric: tabular-nums;
         }
 
-        .libre-fields input[type="text"],
-        .libre-fields input[type="password"] {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 6px 8px;
-            border: 1px solid #d8dcde;
-            border-radius: 4px;
+        .cache-row .btn-tiny { flex: 0 0 auto; }
+
+        /* ---------------- Collapsible fallback section ---------------- */
+
+        details.fallback {
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            padding: 0;
+        }
+
+        details.fallback > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            user-select: none;
+        }
+        details.fallback > summary::-webkit-details-marker { display: none; }
+
+        details.fallback > summary::after {
+            content: '⌃';
+            display: inline-block;
             font-size: 13px;
-            font-family: inherit;
+            color: var(--text-muted);
+            transform: rotate(180deg);
+            transition: transform 0.15s;
+        }
+        details.fallback[open] > summary::after {
+            transform: rotate(0deg);
         }
 
-        .libre-fields input:focus {
-            outline: none;
-            border-color: #1f73b7;
+        .fallback-body {
+            padding: 0 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
-        .libre-hint {
+        .fallback-body label {
             font-size: 11px;
-            color: #68737d;
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-top: 4px;
+        }
+
+        .fallback-body input[type="text"],
+        .fallback-body input[type="password"] {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 12.5px;
+            font-family: inherit;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .fallback-body input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-bg);
+        }
+
+        .fallback-hint {
+            font-size: 11px;
+            color: var(--text-muted);
             line-height: 1.4;
             margin-top: 2px;
         }
 
-        .save-btn {
-            width: 100%;
-            background: #1f73b7;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .save-btn:hover { background: #1557a0; }
-        .save-btn:disabled { background: #ccc; cursor: not-allowed; }
-
         .save-msg {
-            font-size: 12px;
-            margin-top: 6px;
-            min-height: 16px;
+            font-size: 11.5px;
+            min-height: 14px;
+            margin-top: 4px;
         }
-        .save-msg.success { color: #038153; }
-        .save-msg.error { color: #cc3340; }
+        .save-msg.success { color: var(--success); }
+        .save-msg.error { color: var(--error); }
+
+        /* ---------------- Footer ---------------- */
 
         .footer {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid #e5e7eb;
+            margin-top: 6px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-soft);
             text-align: center;
-            font-size: 11px;
-            color: #999;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 6px;
-        }
-
-        .status-indicator.active { background-color: #10b981; }
-        .status-indicator.inactive { background-color: #ef4444; }
-
-        .clear-cache-btn {
-            width: 100%;
-            margin-top: 10px;
-            background: white;
-            color: #68737d;
-            border: 1px solid #d8dcde;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s, color 0.2s, border-color 0.2s;
-        }
-        .clear-cache-btn:hover {
-            background: #fef2f2;
-            color: #cc3340;
-            border-color: #fca5a5;
-        }
-        .clear-cache-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .manage-macros-btn {
-            width: 100%;
-            margin-top: 16px;
-            background: white;
-            color: #2f3941;
-            border: 1px solid #d8dcde;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s;
-        }
-        .manage-macros-btn:hover {
-            background: #eff6ff;
-            border-color: #1f73b7;
+            font-size: 10.5px;
+            color: var(--text-faint);
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <img src="icon48.png" alt="Icon">
+        <img class="logo logo-light" src="icon48.png" alt="">
+        <img class="logo logo-dark"  src="icon48-dark.png" alt="">
         <h1>Zendesk Auto Translator</h1>
-        <span class="version">v2.0.4</span>
+        <span class="version">v2.0.6</span>
     </div>
 
-    <div class="status-section">
+    <div class="card">
         <div class="status-row">
-            <span class="status-label">Status:</span>
+            <span class="status-label">Status</span>
             <span class="status-value" id="status">
                 <span class="status-indicator active"></span>
                 <span id="statusText">Active</span>
             </span>
         </div>
         <div class="status-row">
-            <span class="status-label">Detected Language:</span>
+            <span class="status-label">Detected language</span>
             <span class="status-value" id="detectedLanguage">None</span>
         </div>
         <div class="status-row">
-            <span class="status-label">Fallback:</span>
+            <span class="status-label">Fallback</span>
             <span class="status-value" id="fallbackStatus">Not configured</span>
         </div>
-        <div class="status-row">
-            <span class="status-label">Cache:</span>
-            <span class="status-value" id="cacheStatus">0 entries</span>
+        <div class="cache-row">
+            <span class="status-label">Cache</span>
+            <span class="cache-value" id="cacheStatus">0 entries</span>
+            <button class="btn-tiny" id="clearCacheBtn" type="button">Clear</button>
         </div>
-        <button class="clear-cache-btn" id="clearCacheBtn" type="button">Clear cache</button>
     </div>
 
-    <div class="toggle-section">
-        <span class="toggle-label">Enable Translator</span>
+    <div class="toggle-row">
+        <span class="toggle-label">Enable translator</span>
         <label class="toggle-switch">
             <input type="checkbox" id="toggleSwitch" checked>
             <span class="slider"></span>
         </label>
     </div>
 
-    <span class="section-label">Fallback translator (optional)</span>
-    <div class="libre-fields visible" id="libreFields">
-        <label for="libreUrl">LibreTranslate server URL</label>
-        <input type="text" id="libreUrl" placeholder="https://libretranslate.mydomain.com" autocomplete="off" spellcheck="false">
-        <label for="libreApiKey">API key (optional)</label>
-        <input type="password" id="libreApiKey" placeholder="Leave blank if not required" autocomplete="off">
-        <div class="libre-hint">Used only when Google Translate fails. Leave the URL blank to disable fallback.</div>
-    </div>
+    <details class="fallback" id="fallbackDetails">
+        <summary>Fallback translator (LibreTranslate)</summary>
+        <div class="fallback-body">
+            <label for="libreUrl">Server URL</label>
+            <input type="text" id="libreUrl" placeholder="https://libretranslate.mydomain.com" autocomplete="off" spellcheck="false">
+            <label for="libreApiKey">API key (optional)</label>
+            <input type="password" id="libreApiKey" placeholder="Leave blank if not required" autocomplete="off">
+            <div class="fallback-hint">Used only when Google Translate fails. Leave the URL blank to disable.</div>
+            <button class="btn btn-primary" id="saveBtn" style="margin-top: 4px;">Save settings</button>
+            <div class="save-msg" id="saveMsg"></div>
+        </div>
+    </details>
 
-    <button class="save-btn" id="saveBtn">Save settings</button>
-    <div class="save-msg" id="saveMsg"></div>
-
-    <button class="manage-macros-btn" id="manageMacrosBtn" type="button">Manage macros…</button>
+    <button class="btn btn-secondary" id="manageMacrosBtn" type="button">Manage macros…</button>
 
     <div class="footer">
         Made for Mac Group Global

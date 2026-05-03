@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearCacheBtn = document.getElementById('clearCacheBtn');
     const manageMacrosBtn = document.getElementById('manageMacrosBtn');
 
+    const fallbackDetails = document.getElementById('fallbackDetails');
+
     chrome.storage.local.get(
         ['enabled', 'libretranslateUrl', 'libretranslateApiKey'],
         (result) => {
@@ -24,6 +26,12 @@ document.addEventListener('DOMContentLoaded', () => {
             libreUrl.value = result.libretranslateUrl || '';
             libreApiKey.value = result.libretranslateApiKey || '';
             fallbackStatus.textContent = result.libretranslateUrl ? 'LibreTranslate' : 'Not configured';
+            // Auto-expand the fallback section if one is already
+            // configured — the agent likely opened the popup to edit
+            // it, not to look at it collapsed.
+            if (result.libretranslateUrl && fallbackDetails) {
+                fallbackDetails.open = true;
+            }
         }
     );
 
@@ -173,7 +181,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const entries = `${size} ${size === 1 ? 'entry' : 'entries'}`;
         if (!total) return entries;
         const pct = Math.round((hits / total) * 100);
-        return `${entries} · ${hits}/${total} hits (${pct}%)`;
+        // Compact format: "10 entries · 55% hit". Drops the raw hits/total
+        // ratio because it doesn't fit on one line at 320px popup width
+        // alongside the "Cache" label and "Clear" button. The percentage
+        // is the actually-useful number; raw counts only matter for
+        // diagnostics and are still in chrome.storage.local for that.
+        return `${entries} · ${pct}% hit`;
     }
 
     function showSaveError(msg) {
