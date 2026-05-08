@@ -543,3 +543,196 @@ body {
 }
 .zt-macros-save-status-success { color: #038153; }
 .zt-macros-save-status-error { color: #cc3340; }
+
+/* ---------------- Dark mode overrides ---------------- */
+/*
+ * The popup uses CSS variables for dark mode. The macros editor was
+ * built earlier with hardcoded colors; rather than refactor all of it
+ * to variables (low-risk additive change is safer), we override the
+ * key surfaces here. Tokens loosely match popup.html's dark palette
+ * so the two share a visual language.
+ */
+
+@media (prefers-color-scheme: dark) {
+    html, body {
+        background: #161b22;
+        color: #e6edf3;
+        color-scheme: dark;
+    }
+
+    /* Header bar */
+    .zt-macros-header {
+        background: #1c232c;
+        border-bottom-color: #2d343d;
+    }
+    .zt-macros-subtitle { color: #9ba9b9; }
+    .zt-macros-subtitle code {
+        background: #161b22;
+        border-color: #2d343d;
+        color: #c9d1d9;
+    }
+
+    /* Sync bar */
+    .zt-sync-bar {
+        background: #1c232c;
+        border-bottom-color: #2d343d;
+    }
+    .zt-sync-info strong { color: #e6edf3; }
+    .zt-sync-repo a { color: #58a6ff; }
+    .zt-sync-last { color: #9ba9b9; }
+    .zt-sync-settings {
+        background: #161b22;
+        border-color: #2d343d;
+    }
+    .zt-sync-settings label { color: #9ba9b9; }
+    .zt-sync-settings input[type="password"] {
+        background: #1c232c;
+        border-color: #2d343d;
+        color: #e6edf3;
+    }
+    .zt-sync-settings input[type="password"]:focus {
+        border-color: #58a6ff;
+    }
+    .zt-sync-hint { color: #9ba9b9; }
+    .zt-sync-hint a { color: #58a6ff; }
+    .zt-sync-hint code {
+        background: #161b22;
+        border-color: #2d343d;
+        color: #c9d1d9;
+    }
+    .zt-sync-status { color: #9ba9b9; }
+    .zt-sync-status-success { color: #3fb950; }
+    .zt-sync-status-error { color: #f85149; }
+    .zt-sync-status-busy { color: #58a6ff; }
+
+    /* Sidebar */
+    .zt-macros-sidebar {
+        background: #1c232c;
+        border-right-color: #2d343d;
+    }
+    .zt-macros-sidebar-header {
+        border-bottom-color: #232930;
+    }
+    .zt-macros-sidebar-header h2 { color: #9ba9b9; }
+    #macroFilter {
+        background: #161b22;
+        border-color: #2d343d;
+        color: #e6edf3;
+    }
+    #macroFilter:focus {
+        background: #1c232c;
+        border-color: #58a6ff;
+    }
+    .zt-macros-list-item { color: #e6edf3; }
+    .zt-macros-list-item:hover { background: #232b35; }
+    .zt-macros-list-item-active {
+        background: rgba(88, 166, 255, 0.18);
+        color: #79b8ff;
+    }
+    .zt-macros-empty { color: #9ba9b9; }
+
+    /* Editor */
+    .zt-macros-placeholder { color: #9ba9b9; }
+    .zt-macros-field label { color: #9ba9b9; }
+    #macroName {
+        background: #1c232c;
+        border-color: #2d343d;
+        color: #e6edf3;
+    }
+    #macroName:focus { border-color: #58a6ff; }
+    .zt-macros-hint { color: #9ba9b9; }
+    .zt-macros-hint code {
+        background: #161b22;
+        border-color: #2d343d;
+        color: #c9d1d9;
+    }
+
+    /* RTE toolbar + body */
+    .zt-macros-toolbar {
+        background: #1c232c;
+        border-color: #2d343d;
+    }
+    .zt-macros-toolbar button {
+        background: #161b22;
+        border-color: #2d343d;
+        color: #e6edf3;
+    }
+    .zt-macros-toolbar button:hover {
+        background: rgba(88, 166, 255, 0.12);
+        border-color: #58a6ff;
+    }
+    .zt-macros-toolbar button:active {
+        background: rgba(88, 166, 255, 0.20);
+    }
+    .zt-macros-toolbar-sep { background: #2d343d; }
+
+    .zt-macros-rte {
+        background: #1c232c;
+        border-color: #2d343d;
+        color: #e6edf3;
+    }
+    .zt-macros-rte:focus {
+        border-color: #58a6ff;
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.18);
+    }
+    .zt-macros-rte:empty::before { color: #6e7b8a; }
+    .zt-macros-rte a { color: #58a6ff; }
+
+    /* Checkbox row (auto-translate toggle) */
+    .zt-macros-checkbox { color: #e6edf3; }
+
+    /* Attachment chips */
+    .zt-attachment-item {
+        background: #1c232c;
+        border-color: #2d343d;
+    }
+    .zt-attachment-icon {
+        background: rgba(248, 81, 73, 0.10);
+        border-color: rgba(248, 81, 73, 0.40);
+        color: #f85149;
+    }
+    .zt-attachment-name { color: #e6edf3; }
+    .zt-attachment-size { color: #9ba9b9; }
+    .zt-attachment-remove {
+        color: #9ba9b9;
+        border-color: transparent;
+    }
+    .zt-attachment-remove:hover {
+        background: rgba(248, 81, 73, 0.10);
+        color: #f85149;
+        border-color: rgba(248, 81, 73, 0.40);
+    }
+
+    /* Buttons */
+    .zt-btn-primary {
+        background: #58a6ff;
+        color: #0a0d12;
+    }
+    .zt-btn-primary:hover { background: #79b8ff; }
+    .zt-btn-primary:disabled { background: #444; color: #888; }
+
+    .zt-btn-secondary {
+        background: #1c232c;
+        color: #e6edf3;
+        border-color: #2d343d;
+    }
+    .zt-btn-secondary:hover:not(:disabled) {
+        background: rgba(88, 166, 255, 0.12);
+        border-color: #58a6ff;
+    }
+
+    .zt-btn-danger {
+        background: #1c232c;
+        color: #f85149;
+        border-color: rgba(248, 81, 73, 0.40);
+    }
+    .zt-btn-danger:hover:not(:disabled) {
+        background: rgba(248, 81, 73, 0.10);
+    }
+
+    .zt-btn-link { color: #58a6ff; }
+
+    /* Save status */
+    .zt-macros-save-status-success { color: #3fb950; }
+    .zt-macros-save-status-error { color: #f85149; }
+}

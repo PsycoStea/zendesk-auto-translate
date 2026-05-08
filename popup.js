@@ -1,5 +1,25 @@
 // Popup script for Zendesk Auto Translator
 
+// Theme-aware toolbar icon. Whenever the popup opens, report the
+// current prefers-color-scheme to the background SW so it can update
+// the toolbar icon. Also subscribe to live theme changes for the
+// rare case the user changes themes while the popup is open.
+(function reportToolbarTheme() {
+    try {
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const send = () => {
+            try {
+                chrome.runtime.sendMessage(
+                    { type: 'updateToolbarIcon', dark: mq.matches },
+                    () => { void chrome.runtime.lastError; }
+                );
+            } catch (_) {}
+        };
+        send();
+        mq.addEventListener('change', send);
+    } catch (_) {}
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     const toggleSwitch = document.getElementById('toggleSwitch');
     const statusText = document.getElementById('statusText');

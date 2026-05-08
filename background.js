@@ -37,6 +37,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // itself (extension pages can fetch host_permissions origins with
     // cookies via the user's cookie jar), so the round-trip through
     // background isn't needed.
+
+    // Theme-aware toolbar icon (v2.0.7). The `theme_icons` manifest
+    // field doesn't switch live in current Chrome stable — the icon
+    // sticks on whichever variant Chrome rendered first. Fall back to
+    // a JS-based switch: extension pages and content scripts detect
+    // `prefers-color-scheme` via matchMedia and message us; we call
+    // chrome.action.setIcon to update the toolbar icon explicitly.
+    if (request && request.type === 'updateToolbarIcon') {
+        const suffix = request.dark ? '-dark' : '';
+        try {
+            chrome.action.setIcon({
+                path: {
+                    16: `icon16${suffix}.png`,
+                    48: `icon48${suffix}.png`,
+                    128: `icon128${suffix}.png`,
+                },
+            }, () => {
+                // setIcon doesn't return a value; swallow lastError to
+                // avoid unhandled-promise warnings if the path is
+                // missing on disk.
+                void chrome.runtime.lastError;
+            });
+        } catch (_) {}
+        sendResponse({ received: true });
+        return true;
+    }
+
     sendResponse({ received: true });
     return true;
 });

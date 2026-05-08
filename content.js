@@ -501,10 +501,24 @@
                 if (!settings.libretranslateUrl) throw googleErr;
                 try {
                     translated = await libreTranslate(tokenized, targetLang, sourceLang);
-                } catch (_libreErr) {
-                    // Both providers failed. Surface the Google error — it's
-                    // usually more informative than LibreTranslate's.
-                    throw googleErr;
+                } catch (libreErr) {
+                    // Both providers failed. Build a combined error so
+                    // the toast shows what BOTH providers said —
+                    // earlier this swallowed the LibreTranslate error
+                    // and surfaced only Google's, which left users
+                    // unable to debug fallback failures (the symptom
+                    // looked identical to a primary-only failure).
+                    console.error('[zt] Google failed:', googleErr);
+                    console.error('[zt] LibreTranslate failed:', libreErr);
+                    console.error('[zt] LibreTranslate URL attempted:', settings.libretranslateUrl);
+                    const gMsg = (googleErr && googleErr.message) || String(googleErr);
+                    const lMsg = (libreErr && libreErr.message) || String(libreErr);
+                    const combined = new Error(
+                        `Both translators failed. LibreTranslate: ${lMsg}. (Google: ${gMsg}.)`
+                    );
+                    combined.googleError = googleErr;
+                    combined.libreError = libreErr;
+                    throw combined;
                 }
             }
         }
@@ -2871,6 +2885,25 @@
         teardownObservers();
 
         console.log('Zendesk Auto Translator initializing...');
+
+        // Report current prefers-color-scheme to the background SW so
+        // it can update the toolbar icon (theme_icons in MV3 doesn't
+        // switch live in current Chrome stable — JS fallback). Also
+        // listen for live theme changes; Zendesk tabs are usually open
+        // all day so this catches changes while the user works.
+        try {
+            const mq = window.matchMedia('(prefers-color-scheme: dark)');
+            const reportTheme = () => {
+                try {
+                    chrome.runtime.sendMessage(
+                        { type: 'updateToolbarIcon', dark: mq.matches },
+                        () => { void chrome.runtime.lastError; }
+                    );
+                } catch (_) {}
+            };
+            reportTheme();
+            mq.addEventListener('change', reportTheme);
+        } catch (_) {}
 
         // Install the document-level auto-retranslate listener once.
         // It self-gates on isEnabled, so leaving it attached across

@@ -667,6 +667,16 @@
         const headers = Object.assign({
             'Accept': 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28',
+            // Defense against Chrome's HTTP cache serving stale data.
+            // GitHub returns ETags + max-age headers; without these,
+            // a list-then-PUT cycle could fetch a CACHED listing whose
+            // SHA is older than the live one, then PUT with the stale
+            // SHA, and GitHub rejects with "X does not match Y" (422).
+            // Pragma is for legacy proxies; Cache-Control is the modern
+            // way; `cache: 'no-store'` on the fetch options is the
+            // belt-and-braces fix below.
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
         }, (init && init.headers) || {});
         if (syncState.token) {
             // Always send the token if we have it — even for reads,
@@ -674,7 +684,8 @@
             // instead of 60/hour.
             headers['Authorization'] = `Bearer ${syncState.token}`;
         }
-        return fetch(url, Object.assign({}, init, { headers })).then(async (resp) => {
+        const fetchInit = Object.assign({ cache: 'no-store' }, init, { headers });
+        return fetch(url, fetchInit).then(async (resp) => {
             const text = await resp.text();
             let body = null;
             try { body = text ? JSON.parse(text) : null; } catch (_) { body = { message: text }; }
@@ -766,7 +777,7 @@
         // for any size.
         const safeName = sanitizeAttachmentFilename(filename);
         const url = `https://raw.githubusercontent.com/${SYNC_REPO_OWNER}/${SYNC_REPO_NAME}/${SYNC_REPO_BRANCH}/${SYNC_PATH_PREFIX}/${encodeURIComponent(macroName.toLowerCase())}/${encodeURIComponent(safeName)}`;
-        const resp = await fetch(url);
+        const resp = await fetch(url, { cache: 'no-store' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
         const blob = await resp.blob();
         return await fileToBase64(blob);
@@ -927,7 +938,7 @@
             // public repos get a stable one — both work the same way.
             const fetched = await Promise.all(remoteFiles.map(async (f) => {
                 try {
-                    const resp = await fetch(f.download_url);
+                    const resp = await fetch(f.download_url, { cache: 'no-store' });
                     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                     const text = await resp.text();
                     const data = JSON.parse(text);
@@ -1313,4 +1324,23 @@
             if (gc > 0) console.log('[zt-macro] GC dropped', gc, 'orphaned attachment blobs');
         } catch (_) {}
     });
+
+    // Theme reporter — same pattern as popup.js. Updates the toolbar
+    // icon when the macros editor tab is open and the user changes
+    // theme.
+    (function reportToolbarTheme() {
+        try {
+            const mq = window.matchMedia('(prefers-color-scheme: dark)');
+            const send = () => {
+                try {
+                    chrome.runtime.sendMessage(
+                        { type: 'updateToolbarIcon', dark: mq.matches },
+                        () => { void chrome.runtime.lastError; }
+                    );
+                } catch (_) {}
+            };
+            send();
+            mq.addEventListener('change', send);
+        } catch (_) {}
+    })();
 })();
