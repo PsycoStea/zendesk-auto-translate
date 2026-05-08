@@ -155,8 +155,8 @@ You'll create four macros to exercise the macro feature surface across the rest 
 
 ## 1.3 Toolbar icon theme
 
-- [ ] Confirm the Chrome toolbar icon visually matches the current theme (light variant on light Chrome, dark variant on dark Chrome).
-- [ ] **Retest after v2.0.7:** the toolbar icon now updates via JS (popup + content scripts report `prefers-color-scheme` to the background SW, which calls `chrome.action.setIcon`). The icon updates next time the popup opens or any Zendesk tab loads or you change theme while a Zendesk tab is open. There may be a brief delay (1–2s) on first switch.
+- [PASS] Confirm the Chrome toolbar icon visually matches the current theme (light variant on light Chrome, dark variant on dark Chrome).
+- [PASS] **Retest after v2.0.7:** the toolbar icon now updates via JS (popup + content scripts report `prefers-color-scheme` to the background SW, which calls `chrome.action.setIcon`). The icon updates next time the popup opens or any Zendesk tab loads or you change theme while a Zendesk tab is open. There may be a brief delay (1–2s) on first switch.
 - **Notes:**
 
 ## 1.4 Enable / disable toggle
@@ -181,8 +181,8 @@ You'll create four macros to exercise the macro feature surface across the rest 
 ## 1.7 Manage macros button
 
 - [PASS] Click **Manage macros…**. A new tab should open at `chrome-extension://…/macros.html`. The popup should close.
-- [ ] The macros editor tab should reflect the same theme (light/dark) as the popup did.
-- [ ] **Retest after v2.0.7:** dark mode added to `macros.css` via `@media (prefers-color-scheme: dark)`. Header, sync bar, sidebar, editor, toolbar, attachment chips, and all buttons should follow the OS theme.
+- [PASS] The macros editor tab should reflect the same theme (light/dark) as the popup did.
+- [PASS] **Retest after v2.0.7:** dark mode added to `macros.css` via `@media (prefers-color-scheme: dark)`. Header, sync bar, sidebar, editor, toolbar, attachment chips, and all buttons should follow the OS theme.
 - **Notes:**
 
 ---
@@ -308,10 +308,10 @@ Skip this section if you're confident the editor is fine; otherwise it catches m
 
 ## 3.5 File picker filters to PDFs
 
-- [ ] Open `qa-with-pdf`. Click **+ Add PDF**.
-- [ ] In the file picker, verify only PDF files are selectable (other file types are greyed out or hidden). The `accept="application/pdf"` attribute on the input drives this.
-- [ ] Cancel the picker.
-- [ ] On macOS / Chrome, this is enforced by the OS file picker — non-PDFs cannot be chosen at all. The defense-in-depth check inside the JS (which surfaces "not a PDF (skipped)" status) only runs if a non-PDF gets through, e.g. via drag-drop on platforms where the picker is more permissive.
+- [PASS] Open `qa-with-pdf`. Click **+ Add PDF**.
+- [PASS] In the file picker, verify only PDF files are selectable (other file types are greyed out or hidden). The `accept="application/pdf"` attribute on the input drives this.
+- [PASS] Cancel the picker.
+- [PASS] On macOS / Chrome, this is enforced by the OS file picker — non-PDFs cannot be chosen at all. The defense-in-depth check inside the JS (which surfaces "not a PDF (skipped)" status) only runs if a non-PDF gets through, e.g. via drag-drop on platforms where the picker is more permissive.
 - **Notes:**
 
 ## 3.6 Warn on large PDF (optional)
@@ -412,18 +412,18 @@ Tests both push (admin) and the simulation of "teammate pulls for the first time
 
 ## 5.1 Push current state (after Section 3 edits)
 
-- [ ] In the macros editor, click **⬆ Push**.
-- [ ] Section 3 modified `qa-formatted` (test 3.1) so a one-file update is expected. Status should read `Pushed — 1 updated, 3 unchanged.` or similar — no SHA mismatch errors.
-- [ ] On GitHub, the latest commit should be `Update macro: qa-formatted`.
-- [ ] (Earlier this test was written assuming Section 3 left state untouched — that was a mistake. Test 3.1 always edits qa-formatted, so a one-file update is the expected post-Section-3 state.)
+- [PASS] In the macros editor, click **⬆ Push**.
+- [PASS] Section 3 modified `qa-formatted` (test 3.1) so a one-file update is expected. Status should read `Pushed — 1 updated, 3 unchanged.` or similar — no SHA mismatch errors.
+- [PASS] On GitHub, the latest commit should be `Update macro: qa-formatted`.
+- [PASS] (Earlier this test was written assuming Section 3 left state untouched — that was a mistake. Test 3.1 always edits qa-formatted, so a one-file update is the expected post-Section-3 state.)
 - **Notes:**
 
 ## 5.2 Edit + push
 
-- [ ] Open `qa-greeting`. Append the word `(edited)` to the body. Click **Save**.
-- [ ] Click **⬆ Push**. Status: `Pushed — 1 updated.`
-- [ ] On GitHub, the latest commit should be "Update macro: qa-greeting".
-- [ ] **Retest after v2.0.7:** the SHA mismatch was caused by Chrome serving a cached GitHub Contents API list response between the listing and the PUT. Fix: `cache: 'no-store'` + `Cache-Control: no-cache` headers on all sync reads.
+- [PASS] Open `qa-greeting`. Append the word `(edited)` to the body. Click **Save**.
+- [PASS] Click **⬆ Push**. Status: `Pushed — 1 updated.`
+- [PASS] On GitHub, the latest commit should be "Update macro: qa-greeting".
+- [PASS] **Retest after v2.0.7:** the SHA mismatch was caused by Chrome serving a cached GitHub Contents API list response between the listing and the PUT. Fix: `cache: 'no-store'` + `Cache-Control: no-cache` headers on all sync reads.
 - **Notes:**
 
 ## 5.3 Simulate teammate pull (the important one)
@@ -432,7 +432,7 @@ Tests both push (admin) and the simulation of "teammate pulls for the first time
 - [PASS] Click **⬇ Pull**.
 - [PASS] Status should report `Pulled 4 macros — 4 added, 1 attachment.` (or similar — the actual numbers depend on whether you have other macros in the repo).
 - [PASS] All four `qa-*` macros should reappear in the sidebar.
-- [ ] Open `qa-greeting` — the `(edited)` text from 5.2 should be there. (Cascade: this only worked after 5.2 was fixed in v2.0.7.)
+- [PASS] Open `qa-greeting` — the `(edited)` text from 5.2 should be there. (Cascade: this only worked after 5.2 was fixed in v2.0.7.)
 - [PASS] Open `qa-with-pdf` — the PDF should be in the attachment list.
 - **Notes:**
 
